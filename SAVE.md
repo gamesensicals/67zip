@@ -1,0 +1,56 @@
+# SAVE: 67zip (gamesensicals/67zip)
+
+Saved work for the 67zip project. The project repository `gamesensicals/67zip`
+was empty when this started; nothing is published there yet. When the work is
+finished **and the user approves**, it moves to `gamesensicals/67zip` branch
+`claude/67zip-gui-linux-k401kq` (delete this `SAVE.md` in that final commit).
+
+Scheduled continuations the user asked for: **03:40** and **08:55** Vienna time
+(2026-11-22).
+
+## The request
+
+A 7-Zip-like archiver **with a GUI for Linux**, named **67zip**. Decisions made
+with the user:
+
+- **Rust**, with **as much of our own code as possible**, **as secure as
+  possible**, speed **at least 85% of 7-Zip** (measured, see below).
+- GUI toolkit **iced** (pure Rust, draws its own UI) so it looks **the same and
+  as nice as possible on every distro**: bundled Inter font, own icon set,
+  follows system dark/light mode and accent colour (XDG portal), HiDPI.
+- License: MIT OR Apache-2.0 (user may change).
+
+## Speed check done before starting (4-core VM, 7-Zip 23.01, ~100-130 MB corpora)
+
+Safe Rust (no `unsafe` in our code, lzma-rust2 without its `optimization`
+feature) vs 7-Zip, same threads and same output size:
+7z LZMA2 compress 86% / 95%; 7z extract 105-114% (single block), ~170% (our
+multi-block files); zip compress 2.3-2.9x faster (files ~3% larger); zip
+extract ~190%; bzip2 compress 175-215%; **bzip2 extract 57%** -> plan: own
+multi-core safe bzip2 decoder.
+
+## Plan (stages)
+
+1. Engine `crates/zip67-core`: own zip (read/write, Zip64, UTF-8, AES-256
+   WinZip AE-2, ZipCrypto read only), own tar (+gz/bz2/xz/zst/lz), single-file
+   streams, safe extraction (cap-std, no escapes, bomb limits), create/update.
+2. Own 7z reader/writer: LZMA2 (multi-threaded), LZMA, PPMd, BZip2, Deflate,
+   Copy, BCJ filters, AES-256 + encrypted headers.
+3. CLI `67z` (7-Zip style commands) + sandboxed worker process (Landlock +
+   seccomp); the GUI never parses archives itself.
+4. GUI `67zip` (iced): 7-Zip-style file manager, dialogs, theming, icons.
+5. Own parallel safe bzip2 decoder, ISO reader, hashes, split volumes, bench.
+6. Fuzzing, CI, packaging (desktop entry/MIME, file-manager menus, Flatpak,
+   AppImage), README.
+
+## Done
+
+- (nothing yet beyond the plan and workspace skeleton)
+
+## How to resume
+
+```
+git clone https://github.com/gamesensicals/savedata && cd savedata
+git checkout claude/67zip-gui-linux-k401kq
+cargo test --workspace
+```
