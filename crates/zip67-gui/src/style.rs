@@ -271,3 +271,31 @@ pub fn scroll(theme: &Theme, status: scrollable::Status) -> scrollable::Style {
     s.vertical_rail.border = Border::default();
     s
 }
+
+pub fn pick(theme: &Theme, status: iced::widget::pick_list::Status) -> iced::widget::pick_list::Style {
+    use iced::widget::pick_list::Status;
+    let focused = matches!(status, Status::Opened { .. });
+    let hovered = matches!(status, Status::Hovered | Status::Opened { is_hovered: true });
+    iced::widget::pick_list::Style {
+        text_color: theme.palette().text,
+        placeholder_color: muted_text(theme),
+        handle_color: muted_text(theme),
+        background: Background::Color(if is_dark(theme) { rgb(0x1b, 0x1e, 0x24) } else { Color::WHITE }),
+        border: Border {
+            color: if focused { theme.palette().primary } else if hovered { mix(border_color(theme), theme.palette().primary, 0.5) } else { border_color(theme) },
+            width: 1.0,
+            radius: 8.0.into(),
+        },
+    }
+}
+
+pub fn pick_menu(theme: &Theme) -> iced::overlay::menu::Style {
+    iced::overlay::menu::Style {
+        background: Background::Color(surface(theme)),
+        border: Border { color: border_color(theme), width: 1.0, radius: 8.0.into() },
+        text_color: theme.palette().text,
+        selected_text_color: Color::WHITE,
+        selected_background: Background::Color(theme.palette().primary),
+        shadow: Shadow { color: with_alpha(Color::BLACK, 0.25), offset: Vector::new(0.0, 4.0), blur_radius: 14.0 },
+    }
+}

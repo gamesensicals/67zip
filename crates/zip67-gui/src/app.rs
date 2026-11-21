@@ -197,6 +197,7 @@ pub enum Message {
     OpenSettings,
     About,
     CloseMenu,
+    ShowMenu,
     CloseModal,
     CopyText(String),
     // forms
@@ -1288,7 +1289,7 @@ impl App {
     // ----- update -------------------------------------------------------------
 
     pub fn update(&mut self, msg: Message) -> Task<Message> {
-        if !matches!(msg, Message::Cursor(_) | Message::Tick | Message::WatchTick | Message::Modifiers(_) | Message::Scrolled(_)) && self.menu.is_some() {
+        if !matches!(msg, Message::Cursor(_) | Message::Tick | Message::WatchTick | Message::Modifiers(_) | Message::Scrolled(_) | Message::ShowMenu) && self.menu.is_some() {
             let keep = matches!(msg, Message::Nothing);
             if !keep {
                 self.menu = None;
@@ -1347,12 +1348,17 @@ impl App {
                     self.anchor = Some(i);
                 }
                 self.focus = Some(i);
-                self.context_menu();
+                // Open on the next update, after the cursor position of this
+                // same input batch has been seen.
+                return Task::done(Message::ShowMenu);
             }
             Message::BackgroundRight => {
-                self.selected.clear();
-                self.context_menu();
+                if self.menu.is_none() {
+                    self.selected.clear();
+                    return Task::done(Message::ShowMenu);
+                }
             }
+            Message::ShowMenu => self.context_menu(),
             Message::Sort(k) => {
                 self.sort = if self.sort.0 == k { (k, !self.sort.1) } else { (k, true) };
                 self.refresh_rows();

@@ -232,7 +232,7 @@ impl App {
                 )
                 .into()
             }
-            None => row![icon(Icon::Shield, 16.0), muted("Archives open in a sandbox")].spacing(6).align_y(Alignment::Center).into(),
+            None => row![icon(Icon::Shield, 16.0), muted("Sandboxed")].spacing(6).align_y(Alignment::Center).into(),
         };
         col = col.push(container(shield).padding(Padding::from([6, 8])));
         container(col).width(210).height(Length::Fill).style(style::sidebar).into()
@@ -240,6 +240,7 @@ impl App {
 
     fn view_list(&self) -> Element<'_, Message> {
         let in_archive = matches!(self.location, Location::Archive { .. });
+        let show_packed = in_archive && self.rows.iter().any(|r| r.packed.is_some());
         let (key, asc) = self.sort;
         let head = |name: &'static str, k: SortKey, w: Length, right: bool| -> Element<Message> {
             let arrow = if key == k { if asc { " ▲" } else { " ▼" } } else { "" };
@@ -254,11 +255,11 @@ impl App {
         header = header.push(space().width(30));
         header = header.push(head("Name", SortKey::Name, Length::Fill, false));
         header = header.push(head("Size", SortKey::Size, Length::Fixed(100.0), true));
-        if in_archive {
+        if show_packed {
             header = header.push(head("Packed", SortKey::Packed, Length::Fixed(100.0), true));
         }
         header = header.push(head("Modified", SortKey::Modified, Length::Fixed(160.0), false));
-        header = header.push(head("Type", SortKey::Type, Length::Fixed(if in_archive { 150.0 } else { 120.0 }), false));
+        header = header.push(head(if in_archive { "Method" } else { "Type" }, SortKey::Type, Length::Fixed(if in_archive { 150.0 } else { 120.0 }), false));
         let header = container(header).width(Length::Fill).style(style::list_header);
 
         let n = self.rows.len();
@@ -272,7 +273,7 @@ impl App {
             let mut col = Column::new().padding(Padding::from([4, 8]));
             col = col.push(space().height(first as f32 * ROW_H));
             for i in first..last {
-                col = col.push(self.view_row(i, in_archive));
+                col = col.push(self.view_row(i, in_archive, show_packed));
             }
             col = col.push(space().height((n - last) as f32 * ROW_H));
             let list = scrollable(col).id(crate::app::LIST_ID).on_scroll(Message::Scrolled).height(Length::Fill).width(Length::Fill).style(style::scroll);
@@ -295,7 +296,7 @@ impl App {
         container(col).width(Length::Fill).height(Length::Fill).style(style::list_area).into()
     }
 
-    fn view_row(&self, i: usize, in_archive: bool) -> Element<'_, Message> {
+    fn view_row(&self, i: usize, in_archive: bool, show_packed: bool) -> Element<'_, Message> {
         let r = &self.rows[i];
         let selected = self.selected.contains(&i);
         let focused = self.focus == Some(i);
@@ -313,11 +314,11 @@ impl App {
         cells = cells.push(container(icon(r.kind.icon(), 20.0)).width(30).align_x(Horizontal::Center));
         cells = cells.push(container(name_row).width(Length::Fill).padding(Padding::from([0, 6])).clip(true));
         cells = cells.push(container(text(size).size(13)).width(100).align_x(Horizontal::Right).padding(Padding::from([0, 6])));
-        if in_archive {
+        if show_packed {
             cells = cells.push(container(text(r.packed.map(human_size).unwrap_or_default()).size(13)).width(100).align_x(Horizontal::Right).padding(Padding::from([0, 6])));
         }
         cells = cells.push(container(text(r.mtime.map(format_local_time).unwrap_or_default()).size(13)).width(160).padding(Padding::from([0, 6])));
-        let typ = if in_archive && !r.is_dir { r.method.clone().unwrap_or_else(|| listing::type_label(r)) } else { listing::type_label(r) };
+        let typ = if in_archive { if r.is_dir { String::new() } else { r.method.clone().unwrap_or_default() } } else { listing::type_label(r) };
         cells = cells.push(container(text(typ).size(13).wrapping(text::Wrapping::None)).width(if in_archive { 150 } else { 120 }).padding(Padding::from([0, 6])).clip(true));
         let odd = i % 2 == 1;
         let styled = container(cells).padding(Padding::from([0, 4])).style(move |t: &iced::Theme| {
@@ -334,7 +335,7 @@ impl App {
         let n = self.rows.len();
         let sel: Vec<&listing::Row> = self.selected.iter().filter_map(|&i| self.rows.get(i)).collect();
         let left = if sel.is_empty() {
-            format!("{n} items")
+            format!("{n} {}", if n == 1 { "item" } else { "items" })
         } else {
             let total: u64 = sel.iter().filter_map(|r| r.size).sum();
             format!("{} of {n} selected · {}", sel.len(), human_size(total))
@@ -381,10 +382,11 @@ impl App {
         let pct = if s.total > 0 { (s.done as f64 / s.total as f64).min(1.0) } else { 0.0 };
         let secs = job.started.elapsed().as_secs_f64().max(0.001);
         let speed = s.done as f64 / secs;
-        let left = if pct > 0.01 && speed > 0.0 { Some(((s.total.saturating_sub(s.done)) as f64 / speed) as u64) } else { None };
+        let finishing = s.total > 0 && s.done >= s.total;
+        let left = if pct > 0.01 && speed > 0.0 && !finishing { Some(((s.total.saturating_sub(s.done)) as f64 / speed) as u64) } else { None };
         let fmt_t = |t: u64| format!("{:02}:{:02}:{:02}", t / 3600, (t / 60) % 60, t % 60);
         let stat = |k: &'a str, v: String| -> Element<'a, Message> { row![container(muted(k)).width(110), text(v).size(13)].into() };
-        let current = safe_display(&s.current);
+        let current = if finishing && secs > 1.0 { "Compressing the last blocks…".to_string() } else { safe_display(&s.current) };
         column![
             row![icon(Icon::Archive, 28.0), text(job.title.clone()).size(18).font(INTER_SEMI)].spacing(12).align_y(Alignment::Center),
             container(text(current).size(13).wrapping(text::Wrapping::None)).clip(true).width(Length::Fill),
@@ -392,7 +394,7 @@ impl App {
             row![
                 column![
                     stat("Elapsed", fmt_t(secs as u64)),
-                    stat("Remaining", left.map(fmt_t).unwrap_or_else(|| "—".into())),
+                    stat("Remaining", left.map(fmt_t).unwrap_or_else(|| if finishing { "finishing…".into() } else { "—".into() })),
                     stat("Speed", format!("{}/s", human_size(speed as u64))),
                 ]
                 .spacing(4)
@@ -611,11 +613,11 @@ impl App {
                 "Archive",
                 row![input("Archive file", &f.archive, Message::AddArchive).width(Length::Fill), secondary("Browse…", Message::AddBrowse)].spacing(6),
             ));
-            c = c.push(field("Format", pick_list(FORMATS, Some(f.format), Message::AddFormat).text_size(14).width(Length::Fill)));
+            c = c.push(field("Format", pick_list(FORMATS, Some(f.format), Message::AddFormat).text_size(14).padding(Padding::from([7, 10])).style(style::pick).menu_style(style::pick_menu).width(Length::Fill)));
         }
-        c = c.push(field("Compression", pick_list(LEVELS, Some(f.level), Message::AddLevel).text_size(14).width(Length::Fill)));
+        c = c.push(field("Compression", pick_list(LEVELS, Some(f.level), Message::AddLevel).text_size(14).padding(Padding::from([7, 10])).style(style::pick).menu_style(style::pick_menu).width(Length::Fill)));
         if !into && matches!(f.format.0, "7z" | "zip") {
-            c = c.push(field("Method", pick_list(f.methods(), Some(f.method), Message::AddMethod).text_size(14).width(Length::Fill)));
+            c = c.push(field("Method", pick_list(f.methods(), Some(f.method), Message::AddMethod).text_size(14).padding(Padding::from([7, 10])).style(style::pick).menu_style(style::pick_menu).width(Length::Fill)));
         }
         if !into && f.format.0 == "7z" {
             c = c.push(field("", checkbox(f.solid).label("Solid archive (smaller, slower to extract single files)").on_toggle(Message::AddSolid).text_size(13)));
@@ -648,7 +650,7 @@ impl App {
         }
         if !into {
             c = c.push(rule::horizontal(1));
-            c = c.push(field("Split into", pick_list(VOLUMES, Some(f.volume), Message::AddVolume).text_size(14).width(Length::Fill)));
+            c = c.push(field("Split into", pick_list(VOLUMES, Some(f.volume), Message::AddVolume).text_size(14).padding(Padding::from([7, 10])).style(style::pick).menu_style(style::pick_menu).width(Length::Fill)));
             c = c.push(field("Leave out", input("e.g. *.tmp, .git, node_modules", &f.exclude, Message::AddExclude)));
             c = c.push(field("", checkbox(f.delete_after).label("Delete the files after they were added").on_toggle(Message::AddDeleteAfter).text_size(13)));
         }
@@ -684,8 +686,8 @@ impl App {
         let mut c = column![Self::title_row(Icon::Extract, "Extract"), muted(format!("Extracting {what}"))].spacing(12);
         c = c.push(field("Destination", row![input("Folder", &f.dest, Message::ExDest).width(Length::Fill), secondary("Browse…", Message::ExBrowse)].spacing(6)));
         c = c.push(field("", checkbox(f.subfolder).label(format!("Into a new folder \"{}\"", safe_display(&sub_name))).on_toggle(Message::ExSubfolder).text_size(13)));
-        c = c.push(field("Folders", pick_list(PATH_MODES, Some(f.path_mode), Message::ExPathMode).text_size(14).width(Length::Fill)));
-        c = c.push(field("Existing files", pick_list(OVERWRITES, Some(f.overwrite), Message::ExOverwrite).text_size(14).width(Length::Fill)));
+        c = c.push(field("Folders", pick_list(PATH_MODES, Some(f.path_mode), Message::ExPathMode).text_size(14).padding(Padding::from([7, 10])).style(style::pick).menu_style(style::pick_menu).width(Length::Fill)));
+        c = c.push(field("Existing files", pick_list(OVERWRITES, Some(f.overwrite), Message::ExOverwrite).text_size(14).padding(Padding::from([7, 10])).style(style::pick).menu_style(style::pick_menu).width(Length::Fill)));
         c = c.push(field(
             "Password",
             row![
@@ -747,14 +749,14 @@ impl App {
             Self::title_row(Icon::Settings, "Settings"),
             field("Appearance", row![theme_btn("System", ThemeChoice::System), theme_btn("Light", ThemeChoice::Light), theme_btn("Dark", ThemeChoice::Dark)].spacing(6)),
             field("Accent colour", swatches),
-            field("Size", pick_list(scales, Some(cur_scale), Message::SetScale).text_size(14)),
+            field("Size", pick_list(scales, Some(cur_scale), Message::SetScale).text_size(14).padding(Padding::from([7, 10])).style(style::pick).menu_style(style::pick_menu)),
             rule::horizontal(1),
             field("", checkbox(s.show_hidden).label("Show hidden files (Ctrl+H)").on_toggle(Message::SetShowHidden).text_size(13)),
             field("", checkbox(s.use_trash).label("Delete moves files to the Trash").on_toggle(Message::SetUseTrash).text_size(13)),
             field("", checkbox(s.confirm_delete).label("Ask before deleting").on_toggle(Message::SetConfirmDelete).text_size(13)),
             rule::horizontal(1),
-            field("New archives", pick_list(FORMATS, FORMATS.iter().copied().find(|f| f.0 == s.default_format), Message::SetDefaultFormat).text_size(14).width(Length::Fill)),
-            field("Compression", pick_list(LEVELS, LEVELS.iter().copied().find(|l| l.0 == s.default_level), Message::SetDefaultLevel).text_size(14).width(Length::Fill)),
+            field("New archives", pick_list(FORMATS, FORMATS.iter().copied().find(|f| f.0 == s.default_format), Message::SetDefaultFormat).text_size(14).padding(Padding::from([7, 10])).style(style::pick).menu_style(style::pick_menu).width(Length::Fill)),
+            field("Compression", pick_list(LEVELS, LEVELS.iter().copied().find(|l| l.0 == s.default_level), Message::SetDefaultLevel).text_size(14).padding(Padding::from([7, 10])).style(style::pick).menu_style(style::pick_menu).width(Length::Fill)),
             row![space().width(Length::Fill), primary("Done", Some(Message::CloseModal))],
         ]
         .spacing(12)
