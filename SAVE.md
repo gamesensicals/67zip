@@ -56,7 +56,13 @@ multi-core safe bzip2 decoder.
   zip/zip-AES/tar.*/gz/bz2/xz/lzma, us reading 7-Zip-made zip (Deflate,
   BZip2, LZMA, PPMd, AES-256, ZipCrypto, Store), tar.gz/bz2/xz, and attack
   tests (zip slip, symlink escape, overlap bomb, fuzzed garbage).
-- 7z and ISO are stubs (`formats/sevenz`, `formats/iso`) -> stage 2/5.
+- **Stage 2 (7z) done**: own 7z container reader/writer
+  (`formats/sevenz/{header,coders,reader,writer}.rs`): signature + encoded +
+  AES-encrypted headers, coder graphs incl. BCJ2, LZMA2 (multi-threaded
+  encode and decode), LZMA, PPMd, BZip2, Deflate, Copy, BCJ/ARM64/Delta
+  filters, 7zAES (key derivation capped at 2^24 rounds), solid/non-solid,
+  updates. 14 tests in `tests/sevenz.rs` pass, both directions against 7-Zip.
+- ISO is a stub (`formats/iso.rs`) -> stage 5.
 
 ## How to resume
 
