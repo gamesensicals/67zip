@@ -45,7 +45,18 @@ multi-core safe bzip2 decoder.
 
 ## Done
 
-- (nothing yet beyond the plan and workspace skeleton)
+- **Stage 1 engine done** (`crates/zip67-core`, `#![forbid(unsafe_code)]`):
+  own zip reader/writer (Zip64, UTF-8, Unix modes, symlinks, AES-256 AE-2
+  with HMAC check, ZipCrypto read-only, Deflate/Store/BZip2/LZMA/XZ/Zstd/PPMd
+  read), own tar (ustar/PAX/GNU) + gz/bz2/xz/zst/lzma/lz, single-file
+  streams, detection, safe extraction via cap-std (no `..`/absolute paths,
+  no escaping symlinks, no setuid/devices, bomb limits, overlap-bomb check),
+  create/update (atomic temp file + rename), hashes, split/combine.
+- Tests: 34 pass (`cargo test -p zip67-core`), incl. real 7-Zip accepting our
+  zip/zip-AES/tar.*/gz/bz2/xz/lzma, us reading 7-Zip-made zip (Deflate,
+  BZip2, LZMA, PPMd, AES-256, ZipCrypto, Store), tar.gz/bz2/xz, and attack
+  tests (zip slip, symlink escape, overlap bomb, fuzzed garbage).
+- 7z and ISO are stubs (`formats/sevenz`, `formats/iso`) -> stage 2/5.
 
 ## How to resume
 
