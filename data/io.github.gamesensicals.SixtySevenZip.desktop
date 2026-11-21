@@ -1,0 +1,18 @@
+[Desktop Entry]
+Type=Application
+Name=67zip
+GenericName=Archive Manager
+Comment=Open, create and extract 7z, zip, tar and other archives
+Exec=67zip %F
+Icon=io.github.gamesensicals.SixtySevenZip
+Terminal=false
+Categories=Utility;Archiving;Compression;GTK;Qt;
+Keywords=archive;7z;zip;unzip;tar;gz;xz;zst;compress;extract;
+MimeType=application/x-7z-compressed;application/zip;application/x-zip-compressed;application/java-archive;application/x-tar;application/x-compressed-tar;application/x-bzip-compressed-tar;application/x-bzip2-compressed-tar;application/x-xz-compressed-tar;application/x-zstd-compressed-tar;application/x-lzma-compressed-tar;application/x-lzip-compressed-tar;application/gzip;application/x-gzip;application/x-bzip2;application/x-bzip;application/x-xz;application/zstd;application/x-zstd;application/x-lzma;application/x-lzip;application/x-cd-image;application/x-iso9660-image;
+StartupWMClass=io.github.gamesensicals.SixtySevenZip
+StartupNotify=true
+Actions=new-window;
+
+[Desktop Action new-window]
+Name=New Window
+Exec=67zip

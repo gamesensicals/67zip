@@ -6,6 +6,27 @@ license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 
+[package.metadata.deb]
+name = "67zip"
+maintainer = "67zip contributors"
+copyright = "2026, 67zip contributors"
+license-file = ["../../LICENSE-MIT", "0"]
+extended-description = "Fast and secure archive manager: 7z, zip, tar (gz, bz2, xz, zst, lz) and more. The archive engine is written in safe Rust and runs sandboxed."
+section = "utils"
+priority = "optional"
+depends = "$auto, libxkbcommon-x11-0"
+assets = [
+    ["target/release/67zip", "usr/bin/", "755"],
+    ["target/release/67z", "usr/bin/", "755"],
+    ["../../data/io.github.gamesensicals.SixtySevenZip.desktop", "usr/share/applications/", "644"],
+    ["../../data/io.github.gamesensicals.SixtySevenZip.metainfo.xml", "usr/share/metainfo/", "644"],
+    ["../../data/icons/io.github.gamesensicals.SixtySevenZip.svg", "usr/share/icons/hicolor/scalable/apps/", "644"],
+    ["../../data/kio/67zip-servicemenu.desktop", "usr/share/kio/servicemenus/", "755"],
+    ["../../data/kio/67zip-extract-servicemenu.desktop", "usr/share/kio/servicemenus/", "755"],
+    ["../../data/nemo/67zip-extract-here.nemo_action", "usr/share/nemo/actions/", "644"],
+    ["../../data/nemo/67zip-add.nemo_action", "usr/share/nemo/actions/", "644"],
+]
+
 [[bin]]
 name = "67zip"
 path = "src/main.rs"

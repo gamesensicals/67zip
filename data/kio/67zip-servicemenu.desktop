@@ -1,0 +1,16 @@
+[Desktop Entry]
+Type=Service
+MimeType=all/allfiles;inode/directory;
+Actions=compress;compressZip;
+X-KDE-Submenu=67zip
+Icon=io.github.gamesensicals.SixtySevenZip
+
+[Desktop Action compress]
+Name=Add to archive…
+Icon=io.github.gamesensicals.SixtySevenZip
+Exec=67zip --add %F
+
+[Desktop Action compressZip]
+Name=Compress to .zip
+Icon=io.github.gamesensicals.SixtySevenZip
+Exec=sh -c '67z a -bd -tzip "$1.zip" "$@"' sh %F

@@ -1,0 +1,7 @@
+[Nemo Action]
+Name=Add to archive (67zip)…
+Comment=Compress the selected items
+Exec=67zip --add %F
+Icon-Name=io.github.gamesensicals.SixtySevenZip
+Selection=notnone
+Extensions=any;

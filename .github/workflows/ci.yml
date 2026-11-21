@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: System packages (7-Zip for compatibility tests)
+        run: sudo apt-get update && sudo apt-get install -y 7zip libxkbcommon-x11-0
+      - name: Build
+        run: cargo build --workspace --locked
+      - name: Tests (includes 7-Zip compatibility and attack tests)
+        run: cargo test --workspace --locked
+      - name: Sandbox self-test
+        run: cargo run --locked -p zip67-cli -- --sandbox-selftest "$RUNNER_TEMP"
+      - name: Clippy
+        run: cargo clippy --workspace --locked -- -D clippy::correctness -D clippy::suspicious
+
+  audit:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: rustsec/audit-check@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+  fuzz:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+      - run: cargo install cargo-fuzz --locked
+      - name: Fuzz every parser for a short while
+        run: |
+          cd fuzz
+          for t in $(cargo fuzz list); do
+            cargo fuzz run "$t" -- -max_total_time=60 -rss_limit_mb=2048
+          done

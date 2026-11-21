@@ -1,0 +1,52 @@
+[package]
+name = "zip67-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[lib]
+path = "src/lib.rs"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+zip67-core = { path = "../crates/zip67-core" }
+
+[workspace]
+members = ["."]
+
+[profile.release]
+debug = 1
+overflow-checks = true
+
+[[bin]]
+name = "open_any"
+path = "fuzz_targets/open_any.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "zip"
+path = "fuzz_targets/zip.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "sevenz"
+path = "fuzz_targets/sevenz.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "tar"
+path = "fuzz_targets/tar.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "streams"
+path = "fuzz_targets/streams.rs"
+test = false
+doc = false

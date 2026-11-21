@@ -1,0 +1,21 @@
+[Desktop Entry]
+Type=Service
+MimeType=application/x-7z-compressed;application/zip;application/x-tar;application/x-compressed-tar;application/x-bzip-compressed-tar;application/x-xz-compressed-tar;application/x-zstd-compressed-tar;application/gzip;application/x-bzip2;application/x-xz;application/zstd;application/x-lzip;application/x-lzma;application/java-archive;
+Actions=extractHere;extractFolder;extractAsk;
+X-KDE-Submenu=67zip
+Icon=io.github.gamesensicals.SixtySevenZip
+
+[Desktop Action extractHere]
+Name=Extract here
+Icon=io.github.gamesensicals.SixtySevenZip
+Exec=67zip --extract-here %f
+
+[Desktop Action extractFolder]
+Name=Extract to its own folder
+Icon=io.github.gamesensicals.SixtySevenZip
+Exec=67zip --extract-to-folder %f
+
+[Desktop Action extractAsk]
+Name=Extract…
+Icon=io.github.gamesensicals.SixtySevenZip
+Exec=67zip --extract %f

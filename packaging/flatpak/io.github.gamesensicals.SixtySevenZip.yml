@@ -1,0 +1,41 @@
+# Flatpak build of 67zip.
+# Before building, generate the offline crate list:
+#   python3 flatpak-cargo-generator.py ../../Cargo.lock -o cargo-sources.json
+#   (https://github.com/flatpak/flatpak-builder-tools/tree/master/cargo)
+# then:
+#   flatpak-builder --user --install build io.github.gamesensicals.SixtySevenZip.yml
+app-id: io.github.gamesensicals.SixtySevenZip
+runtime: org.freedesktop.Platform
+runtime-version: '25.08'
+sdk: org.freedesktop.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.rust-stable
+command: 67zip
+finish-args:
+  - --share=ipc
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --device=dri
+  # An archive manager reads and writes wherever your files are.
+  # The archive worker inside still sandboxes itself per operation.
+  - --filesystem=host
+build-options:
+  append-path: /usr/lib/sdk/rust-stable/bin
+  env:
+    CARGO_HOME: /run/build/67zip/cargo
+    CARGO_NET_OFFLINE: 'true'
+modules:
+  - name: 67zip
+    buildsystem: simple
+    build-commands:
+      - cargo --offline build --release --locked -p zip67-cli -p zip67-gui
+      - install -Dm755 target/release/67zip /app/bin/67zip
+      - install -Dm755 target/release/67z /app/bin/67z
+      - install -Dm644 data/io.github.gamesensicals.SixtySevenZip.desktop /app/share/applications/io.github.gamesensicals.SixtySevenZip.desktop
+      - install -Dm644 data/io.github.gamesensicals.SixtySevenZip.metainfo.xml /app/share/metainfo/io.github.gamesensicals.SixtySevenZip.metainfo.xml
+      - install -Dm644 data/icons/io.github.gamesensicals.SixtySevenZip.svg /app/share/icons/hicolor/scalable/apps/io.github.gamesensicals.SixtySevenZip.svg
+      - for s in 16 32 48 64 128 256 512; do install -Dm644 data/icons/io.github.gamesensicals.SixtySevenZip-$s.png /app/share/icons/hicolor/${s}x${s}/apps/io.github.gamesensicals.SixtySevenZip.png; done
+    sources:
+      - type: dir
+        path: ../..
+      - cargo-sources.json

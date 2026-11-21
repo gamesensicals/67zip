@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.gamesensicals.SixtySevenZip</id>
+  <name>67zip</name>
+  <summary>Fast and secure archive manager</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT OR Apache-2.0</project_license>
+  <description>
+    <p>67zip opens, creates and extracts 7z, zip, tar (gz, bz2, xz, zst, lz) and other archives.
+    Its own archive engine is written in safe Rust and runs in a sandbox, so a malicious archive
+    cannot reach the rest of your files or the network.</p>
+    <ul>
+      <li>7z with LZMA2 (multi-threaded), PPMd, BZip2, AES-256 and encrypted file names</li>
+      <li>zip with AES-256, Zip64 and Unicode names</li>
+      <li>Browse archives like folders, open and edit files inside them</li>
+      <li>Light and dark themes that follow your desktop</li>
+    </ul>
+  </description>
+  <launchable type="desktop-id">io.github.gamesensicals.SixtySevenZip.desktop</launchable>
+  <url type="homepage">https://github.com/gamesensicals/67zip</url>
+  <provides>
+    <binary>67zip</binary>
+    <binary>67z</binary>
+  </provides>
+  <content_rating type="oars-1.1"/>
+  <releases>
+    <release version="0.1.0" date="2026-11-22"/>
+  </releases>
+</component>

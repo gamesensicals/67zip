@@ -72,11 +72,20 @@ multi-core safe bzip2 decoder.
   7z extract ~100%; zip 2-3x faster. Script: `tools/speedcheck.sh`.
 - ISO is a stub (`formats/iso.rs`) -> stage 5.
 
+- **Stage 4 (GUI) mostly done**: `crates/zip67-gui` (binary `67zip`, iced
+  0.14): toolbar, address bar, places/favourites sidebar, virtual file list
+  (sort, multi-select, keyboard), browse into archives (nested read-only),
+  open file from archive + "save changes back", context menu, dialogs (add,
+  extract, password, overwrite, properties, checksums, benchmark, settings,
+  about), progress with pause/cancel/background, toasts, drag-and-drop in,
+  Trash support, light/dark + accent (follows system via mundy), bundled
+  Inter font, own SVG icons + logo (`resources/67zip.svg`). Tested under
+  Xvfb + xdotool (needs `xdotool windowfocus` there: no window manager).
+
 ## Next
 
-Stage 4: GUI crate `crates/zip67-gui` (binary `67zip`, iced 0.14). It must
-run archive work only through `zip67_worker::client::WorkerHandle` spawning
-`current_exe --worker`.
+Stage 6 first (packaging/README/CI/licences), then stage 5 (bzip2 decoder,
+ISO), then fuzz targets.
 
 ## How to resume
 

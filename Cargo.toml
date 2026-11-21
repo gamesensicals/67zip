@@ -1,5 +1,6 @@
 [workspace]
 resolver = "3"
+exclude = ["fuzz"]
 members = ["crates/zip67-core", "crates/zip67-cli", "crates/zip67-gui", "crates/zip67-worker"]
 
 [workspace.package]
