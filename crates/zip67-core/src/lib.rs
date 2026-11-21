@@ -8,6 +8,7 @@
 #![forbid(unsafe_code)]
 
 pub mod archive;
+pub mod bench;
 pub mod cipher;
 pub mod codecs;
 pub mod crc;

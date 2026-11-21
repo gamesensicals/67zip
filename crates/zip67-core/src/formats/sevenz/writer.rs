@@ -83,6 +83,7 @@ pub struct SevenZWriter {
     solid: bool,
     key: Option<Zeroizing<[u8; 32]>>,
     encrypt_names: bool,
+    size_hint: Option<u64>,
     files: Vec<FileRecord>,
     streams: StreamsInfo,
     cur: Option<CurFolder>,
@@ -161,8 +162,7 @@ impl SevenZWriter {
         if !Method::for_type(crate::detect::ArchiveType::SEVEN_Z).contains(&method) {
             return Err(Error::invalid(format!("{} is not available for 7z archives", method.name())));
         }
-        let preset = codecs::lzma_preset(opts.level);
-        let dict = opts.dict_size.unwrap_or_else(|| lzma_rust2::LzmaOptions::with_preset(preset).dict_size);
+        let dict = opts.dict_size.unwrap_or_else(|| codecs::lzma_options(opts.level).dict_size);
         let key = match &opts.password {
             Some(p) if !p.is_empty() => Some(derive_key(p, &[], AES_CYCLES)?),
             Some(_) => return Err(Error::invalid("the password is empty")),
@@ -176,6 +176,7 @@ impl SevenZWriter {
             threads: opts.threads.max(1),
             solid: opts.solid,
             encrypt_names: opts.encrypt_names && key.is_some(),
+            size_hint: opts.size_hint,
             key,
             files: Vec::new(),
             streams: StreamsInfo::default(),
@@ -198,22 +199,23 @@ impl SevenZWriter {
             }
             None => (Box::new(sink), None),
         };
-        let preset = codecs::lzma_preset(self.level);
         let (enc, coder): (Box<dyn FinishWrite>, Coder) = match self.method {
             Method::Lzma2 => {
-                let mut o = lzma_rust2::Lzma2Options::with_preset(preset);
+                let mut o = lzma_rust2::Lzma2Options::with_preset(codecs::lzma_preset(self.level));
+                o.lzma_options = codecs::lzma_options(self.level);
                 o.lzma_options.dict_size = self.dict;
                 let props = vec![lzma2_prop_from_dict(self.dict)];
                 let coder = Coder { id: coders::ID_LZMA2.to_vec(), num_in: 1, num_out: 1, props };
                 if self.threads > 1 {
-                    o.set_chunk_size(NonZeroU64::new((u64::from(self.dict) * 2).max(1 << 20)));
+                    let hint = self.size_hint.map(|t| t.min(SOLID_BLOCK_LIMIT));
+                    o.set_chunk_size(NonZeroU64::new(codecs::mt_block_size(self.dict, self.threads, hint)));
                     (Box::new(Lzma2MtW(lzma_rust2::Lzma2WriterMt::new(stage, o, self.threads as u32)?)), coder)
                 } else {
                     (Box::new(Lzma2W(lzma_rust2::Lzma2Writer::new(stage, o))), coder)
                 }
             }
             Method::Lzma => {
-                let mut o = lzma_rust2::LzmaOptions::with_preset(preset);
+                let mut o = codecs::lzma_options(self.level);
                 o.dict_size = self.dict;
                 let w = lzma_rust2::LzmaWriter::new_no_header(stage, &o, false)?;
                 let mut props = vec![w.props()];

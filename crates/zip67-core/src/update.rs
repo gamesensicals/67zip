@@ -177,7 +177,9 @@ pub fn modify(path: &Path, changes: &Changes, opts: &UpdateOptions, progress: &P
         }
     }
     let kept_total: u64 = reader.entries().iter().filter(|e| keep(e)).map(|e| e.size).sum();
-    progress.set_total(kept_total + new_items.iter().map(|i| i.size).sum::<u64>());
+    let total = kept_total + new_items.iter().map(|i| i.size).sum::<u64>();
+    progress.set_total(total);
+    copts.size_hint = Some(total);
 
     let orig_perm = fs::metadata(path)?.permissions();
     let (out, file) = AtomicOutput::new(path)?;

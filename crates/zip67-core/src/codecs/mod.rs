@@ -28,6 +28,16 @@ pub fn lzma_preset(level: u32) -> u32 {
     [0, 1, 2, 3, 4, 7, 7, 8, 9, 9][level.min(9) as usize]
 }
 
+/// LZMA settings matching 7-Zip's levels: 5 = 16 MiB dictionary with 32
+/// fast bytes (BT4), 7 = 32 MiB / 64, 9 = 64 MiB / 64.
+pub fn lzma_options(level: u32) -> lzma_rust2::LzmaOptions {
+    let mut o = lzma_rust2::LzmaOptions::with_preset(lzma_preset(level));
+    if (4..=6).contains(&level) {
+        o.nice_len = 32;
+    }
+    o
+}
+
 /// 7-Zip style level to zlib/deflate level.
 pub fn deflate_level(level: u32) -> u32 {
     [0, 1, 2, 4, 5, 6, 7, 8, 9, 9][level.min(9) as usize]
@@ -112,6 +122,33 @@ pub fn encoder<'a>(
     name: Option<&str>,
     mtime: u32,
 ) -> Result<Box<dyn FinishWrite + 'a>> {
+    encoder_sized(c, inner, level, threads, name, mtime, None)
+}
+
+/// Block size for multi-threaded LZMA/LZMA2: split the known total evenly
+/// over the threads, but keep blocks between 2x and 4x the dictionary
+/// (7-Zip uses 4x), so ratio stays good and memory stays bounded.
+pub fn mt_block_size(dict: u32, threads: usize, size_hint: Option<u64>) -> u64 {
+    let dict = u64::from(dict).max(1 << 20);
+    match size_hint {
+        Some(total) if threads > 1 => {
+            let even = total.div_ceil(threads as u64);
+            even.clamp(dict * 2, dict * 4).next_multiple_of(1 << 20)
+        }
+        _ => dict * 2,
+    }
+}
+
+/// Like [`encoder`], with the expected input size as a hint.
+pub fn encoder_sized<'a>(
+    c: Compression,
+    inner: BoxWrite<'a>,
+    level: u32,
+    threads: usize,
+    name: Option<&str>,
+    mtime: u32,
+    size_hint: Option<u64>,
+) -> Result<Box<dyn FinishWrite + 'a>> {
     let level = level.min(9);
     Ok(match c {
         Compression::None => Box::new(PlainW(inner)),
@@ -141,9 +178,10 @@ pub fn encoder<'a>(
         }
         Compression::Xz => {
             let mut opts = lzma_rust2::XzOptions::with_preset(lzma_preset(level));
+            opts.lzma_options = lzma_options(level);
             if threads > 1 {
-                let dict = opts.lzma_options.dict_size as u64;
-                opts.set_block_size(NonZeroU64::new((dict * 2).max(1 << 20)));
+                let block = mt_block_size(opts.lzma_options.dict_size, threads, size_hint);
+                opts.set_block_size(NonZeroU64::new(block));
                 Box::new(XzMtW(lzma_rust2::XzWriterMt::new(inner, opts, threads as u32)?))
             } else {
                 Box::new(XzW(lzma_rust2::XzWriter::new(inner, opts)?))
@@ -151,16 +189,17 @@ pub fn encoder<'a>(
         }
         Compression::Lzip => {
             let mut opts = lzma_rust2::LzipOptions::with_preset(lzma_preset(level));
+            opts.lzma_options.nice_len = lzma_options(level).nice_len;
             if threads > 1 {
-                let dict = opts.lzma_options.dict_size as u64;
-                opts.set_member_size(NonZeroU64::new((dict * 2).max(1 << 20)));
+                let block = mt_block_size(opts.lzma_options.dict_size, threads, size_hint);
+                opts.set_member_size(NonZeroU64::new(block));
                 Box::new(LzipMtW(lzma_rust2::LzipWriterMt::new(inner, opts, threads as u32)?))
             } else {
                 Box::new(LzipW(lzma_rust2::LzipWriter::new(inner, opts)))
             }
         }
         Compression::Lzma => {
-            let opts = lzma_rust2::LzmaOptions::with_preset(lzma_preset(level));
+            let opts = lzma_options(level);
             Box::new(LzmaW(lzma_rust2::LzmaWriter::new_use_header(inner, &opts, None)?))
         }
         Compression::Zstd => {

@@ -1,0 +1,72 @@
+use std::fs;
+use std::process::Command;
+
+use zip67_worker::client::WorkerHandle;
+use zip67_worker::protocol::{Event, Reply, Request};
+
+const EXE: &str = env!("CARGO_BIN_EXE_67z");
+
+#[test]
+fn sandbox_blocks_what_it_should() {
+    let tmp = tempfile::tempdir().unwrap();
+    let o = Command::new(EXE).arg("--sandbox-selftest").arg(tmp.path()).output().unwrap();
+    let out = String::from_utf8_lossy(&o.stdout);
+    println!("{out}");
+    assert!(o.status.success(), "sandbox self-test failed:\n{out}");
+}
+
+#[test]
+fn add_list_extract_roundtrip() {
+    let tmp = tempfile::tempdir().unwrap();
+    let src = tmp.path().join("in");
+    fs::create_dir_all(src.join("d")).unwrap();
+    fs::write(src.join("d/a.txt"), b"hello hello hello").unwrap();
+    let arc = tmp.path().join("t.7z");
+    let st = Command::new(EXE).current_dir(tmp.path()).args(["a", "-bd", "t.7z", "in"]).status().unwrap();
+    assert!(st.success());
+    let l = Command::new(EXE).args(["l"]).arg(&arc).output().unwrap();
+    assert!(String::from_utf8_lossy(&l.stdout).contains("in/d/a.txt"));
+    let out = tmp.path().join("out");
+    let st = Command::new(EXE).args(["x", "-bd", "-y"]).arg(format!("-o{}", out.display())).arg(&arc).status().unwrap();
+    assert!(st.success());
+    assert_eq!(fs::read(out.join("in/d/a.txt")).unwrap(), b"hello hello hello");
+}
+
+#[test]
+fn bad_switch_is_usage_error() {
+    let st = Command::new(EXE).args(["x", "-qqq", "a.7z"]).status().unwrap();
+    assert_eq!(st.code(), Some(7));
+}
+
+#[test]
+fn worker_protocol_lists_archive() {
+    let tmp = tempfile::tempdir().unwrap();
+    let f = tmp.path().join("f.txt");
+    fs::write(&f, b"data").unwrap();
+    let arc = tmp.path().join("w.zip");
+    assert!(Command::new(EXE).args(["a", "-bd", "-tzip"]).arg(&arc).arg(&f).status().unwrap().success());
+    let mut w = WorkerHandle::spawn(EXE.as_ref(), &Request::List { archive: arc, password: None }).unwrap();
+    let mut saw_hello = false;
+    loop {
+        match w.next_blocking() {
+            Some(Event::Hello { .. }) => saw_hello = true,
+            Some(Event::Done(Reply::Listing { entries, archive_type, .. })) => {
+                assert_eq!(archive_type, "zip");
+                assert_eq!(entries[0].path, "f.txt");
+                break;
+            }
+            Some(Event::Failed(f)) => panic!("worker failed: {f:?}"),
+            Some(_) => {}
+            None => panic!("worker ended without result"),
+        }
+    }
+    assert!(saw_hello);
+}
+
+#[test]
+fn worker_cannot_read_other_files() {
+    // A request for one archive must not let the worker open another file.
+    let tmp = tempfile::tempdir().unwrap();
+    let o = Command::new(EXE).arg("--sandbox-selftest").arg(tmp.path()).output().unwrap();
+    assert!(String::from_utf8_lossy(&o.stdout).contains("reading /etc/passwd is blocked") || !String::from_utf8_lossy(&o.stdout).contains("Landlock"));
+}

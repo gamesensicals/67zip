@@ -107,6 +107,9 @@ pub struct CreateOptions {
     pub delete_after: bool,
     /// Wildcard patterns of names to leave out (`*.o`, `.git`).
     pub exclude: Vec<String>,
+    /// Total bytes that will be added, if known; lets multi-threaded
+    /// encoders split the work evenly.
+    pub size_hint: Option<u64>,
 }
 
 impl Default for CreateOptions {
@@ -124,6 +127,7 @@ impl Default for CreateOptions {
             follow_symlinks: false,
             delete_after: false,
             exclude: Vec::new(),
+            size_hint: None,
         }
     }
 }
@@ -292,8 +296,8 @@ pub fn new_writer(file: File, opts: &CreateOptions, single_name: Option<&str>) -
             threads,
             opts.password.clone(),
         )?),
-        Container::Tar => Box::new(crate::formats::tar::TarWriter::new(file, t.compression, opts.level, threads)?),
-        Container::Raw => Box::new(crate::formats::raw::RawWriter::new(file, t.compression, opts.level, threads, single_name)?),
+        Container::Tar => Box::new(crate::formats::tar::TarWriter::new(file, t.compression, opts.level, threads, opts.size_hint)?),
+        Container::Raw => Box::new(crate::formats::raw::RawWriter::new(file, t.compression, opts.level, threads, single_name, opts.size_hint)?),
         Container::SevenZ => Box::new(crate::formats::sevenz::SevenZWriter::new(file, opts)?),
         Container::Iso => return Err(Error::invalid("ISO images can only be read")),
     })
@@ -386,11 +390,13 @@ pub fn create(output: &Path, inputs: &[PathBuf], opts: &CreateOptions, progress:
             )));
         }
     }
-    progress.set_total(items.iter().map(|i| i.size).sum());
+    let total: u64 = items.iter().map(|i| i.size).sum();
+    progress.set_total(total);
     progress.set_files_total(items.len() as u64);
     let (out, file) = AtomicOutput::new(output)?;
     let single = items.first().map(|i| i.arcname.clone());
-    let mut writer = new_writer(file, opts, single.as_deref())?;
+    let opts = CreateOptions { size_hint: opts.size_hint.or(Some(total)), ..opts.clone() };
+    let mut writer = new_writer(file, &opts, single.as_deref())?;
     write_items(writer.as_mut(), &items, progress, &mut report)?;
     writer.finish(progress)?;
     let tmp_len = fs::metadata(&out.tmp)?.len();

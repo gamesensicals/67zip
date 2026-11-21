@@ -193,3 +193,36 @@ mod tests {
         assert!(b.u32().is_err());
     }
 }
+
+/// Local date and time, `YYYY-MM-DD HH:MM:SS`.
+pub fn format_local_time(secs: i64) -> String {
+    match jiff::Timestamp::from_second(secs) {
+        Ok(ts) => ts.to_zoned_datetime(jiff::tz::TimeZone::system()).strftime("%Y-%m-%d %H:%M:%S").to_string(),
+        Err(_) => String::from("                   "),
+    }
+}
+
+/// Makes a name safe to show: control characters (which could drive a
+/// terminal) and invisible bidirectional overrides (which can disguise
+/// `photo\u{202e}gpj.exe` as `photoexe.jpg`) are shown as escapes.
+pub fn safe_display(name: &str) -> String {
+    let mut out = String::with_capacity(name.len());
+    for c in name.chars() {
+        let u = c as u32;
+        let dangerous = u < 0x20
+            || u == 0x7f
+            || (0x80..0xa0).contains(&u)
+            || matches!(u, 0x061c | 0x200e | 0x200f | 0x202a..=0x202e | 0x2066..=0x2069 | 0xfeff);
+        if dangerous {
+            out.push_str(&format!("\\u{{{u:x}}}"));
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
+/// True if the name contains characters that `safe_display` escapes.
+pub fn has_hidden_chars(name: &str) -> bool {
+    safe_display(name) != name
+}

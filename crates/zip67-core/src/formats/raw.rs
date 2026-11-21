@@ -119,10 +119,10 @@ pub struct RawWriter {
 }
 
 impl RawWriter {
-    pub fn new(file: std::fs::File, c: Compression, level: u32, threads: usize, name: Option<&str>) -> Result<Self> {
+    pub fn new(file: std::fs::File, c: Compression, level: u32, threads: usize, name: Option<&str>, size_hint: Option<u64>) -> Result<Self> {
         let base = name.and_then(|n| n.rsplit('/').next());
         let buffered: codecs::BoxWrite<'static> = Box::new(io::BufWriter::with_capacity(256 * 1024, file));
-        Ok(RawWriter { out: Some(codecs::encoder(c, buffered, level, threads, base, 0)?), written: false })
+        Ok(RawWriter { out: Some(codecs::encoder_sized(c, buffered, level, threads, base, 0, size_hint)?), written: false })
     }
 }
 

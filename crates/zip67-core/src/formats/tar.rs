@@ -393,9 +393,9 @@ pub struct TarWriter {
 }
 
 impl TarWriter {
-    pub fn new(file: std::fs::File, c: Compression, level: u32, threads: usize) -> Result<Self> {
+    pub fn new(file: std::fs::File, c: Compression, level: u32, threads: usize, size_hint: Option<u64>) -> Result<Self> {
         let buffered: codecs::BoxWrite<'static> = Box::new(io::BufWriter::with_capacity(256 * 1024, file));
-        Ok(TarWriter { out: Some(codecs::encoder(c, buffered, level, threads, None, 0)?) })
+        Ok(TarWriter { out: Some(codecs::encoder_sized(c, buffered, level, threads, None, 0, size_hint)?) })
     }
     /// Writes tar data into any writer (used for nesting inside other formats).
     pub fn from_writer(w: Box<dyn FinishWrite>) -> Self {

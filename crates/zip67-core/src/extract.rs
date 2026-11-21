@@ -99,6 +99,8 @@ pub enum Selection {
     Indices(Vec<usize>),
     /// Archive paths; a folder path selects everything below it.
     Paths(Vec<String>),
+    /// Wildcard patterns (`*`, `?`) matched against the full path or the name.
+    Patterns(Vec<String>),
 }
 
 impl Selection {
@@ -113,6 +115,16 @@ impl Selection {
                 let paths: Vec<String> = p.iter().map(|s| s.trim_matches('/').to_string()).collect();
                 Box::new(move |e| {
                     paths.iter().any(|p| p.is_empty() || e.path == *p || (e.path.starts_with(p.as_str()) && e.path.as_bytes().get(p.len()) == Some(&b'/')))
+                })
+            }
+            Selection::Patterns(p) => {
+                let pats: Vec<String> = p.iter().map(|s| s.trim_matches('/').to_string()).collect();
+                Box::new(move |e| {
+                    pats.iter().any(|p| {
+                        crate::create::wildcard_match(p, &e.path)
+                            || crate::create::wildcard_match(p, e.name())
+                            || (e.path.starts_with(p.as_str()) && e.path.as_bytes().get(p.len()) == Some(&b'/'))
+                    })
                 })
             }
         }

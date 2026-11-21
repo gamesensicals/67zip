@@ -75,7 +75,7 @@ impl<W: Write + Seek + Send> ZipWriter<W> {
             Method::Zstd => codecs::encoder(Compression::Zstd, w, lvl, threads, None, 0)?,
             Method::Lzma => {
                 let mut w = w;
-                let opts = lzma_rust2::LzmaOptions::with_preset(codecs::lzma_preset(lvl));
+                let opts = codecs::lzma_options(lvl);
                 // 7-Zip compatible header: version 9.20, props size 5.
                 w.write_all(&[9, 20, 5, 0])?;
                 let enc = lzma_rust2::LzmaWriter::new_no_header(w, &opts, true)?;
