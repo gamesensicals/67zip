@@ -62,7 +62,21 @@ multi-core safe bzip2 decoder.
   encode and decode), LZMA, PPMd, BZip2, Deflate, Copy, BCJ/ARM64/Delta
   filters, 7zAES (key derivation capped at 2^24 rounds), solid/non-solid,
   updates. 14 tests in `tests/sevenz.rs` pass, both directions against 7-Zip.
+- **Stage 3 done**: `crates/zip67-worker` (Landlock + seccomp sandbox,
+  JSON-lines protocol, worker loop, client) and `crates/zip67-cli` (binary
+  `67z`, 7-Zip style commands a/x/e/l/t/d/rn/u/h/b/i, hidden
+  `--worker` and `--sandbox-selftest`). Self-test passes here (kernel 6.18).
+- Speed after tuning (LZMA level params = 7-Zip's: nice_len 32 at level 5;
+  multi-thread blocks = total/threads clamped to 2-4x dict): 7z compress
+  95-100% of 7-Zip speed (text files 2.3% larger, binaries 0.7% larger);
+  7z extract ~100%; zip 2-3x faster. Script: `tools/speedcheck.sh`.
 - ISO is a stub (`formats/iso.rs`) -> stage 5.
+
+## Next
+
+Stage 4: GUI crate `crates/zip67-gui` (binary `67zip`, iced 0.14). It must
+run archive work only through `zip67_worker::client::WorkerHandle` spawning
+`current_exe --worker`.
 
 ## How to resume
 
