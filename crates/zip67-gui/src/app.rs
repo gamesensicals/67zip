@@ -246,6 +246,9 @@ pub enum Message {
     SetShowHidden(bool),
     SetConfirmDelete(bool),
     SetUseTrash(bool),
+    SetWarnTempOnDisk(bool),
+    TempNoticeDontWarn(bool),
+    TempNoticeOk,
     SetDefaultFormat(Format),
     SetDefaultLevel(Level),
     SetScale(Choice<u32>),
@@ -682,12 +685,12 @@ impl App {
                         } else if let Err(e) = platform::open_with_default(&path) {
                             self.toast(e.to_string(), true);
                         } else {
-                            if password.is_some() && !self.warned_temp_on_disk && !platform::temp_in_memory() {
+                            if password.is_some() && self.settings.warn_temp_on_disk && !self.warned_temp_on_disk && !platform::temp_in_memory() {
+                                // Once per session, until "Don't warn me again".
                                 self.warned_temp_on_disk = true;
-                                self.toast(
-                                    "This file was decrypted to a temporary folder on the disk. 67zip overwrites it when it closes, but SSDs may keep old copies.".to_string(),
-                                    false,
-                                );
+                                if self.modal.is_none() {
+                                    self.modal = Some(Modal::TempOnDisk { folder: self.temp_base.display().to_string(), dont_warn: false });
+                                }
                             }
                             let mtime = std::fs::metadata(&path).and_then(|m| m.modified()).ok();
                             self.watches.push(Watch { temp: path, mtime, archive, folder, password });
@@ -1839,6 +1842,17 @@ impl App {
             }
             Message::SetConfirmDelete(b) => self.with_settings(|s| s.confirm_delete = b),
             Message::SetUseTrash(b) => self.with_settings(|s| s.use_trash = b),
+            Message::SetWarnTempOnDisk(b) => self.with_settings(|s| s.warn_temp_on_disk = b),
+            Message::TempNoticeDontWarn(b) => {
+                if let Some(Modal::TempOnDisk { dont_warn, .. }) = self.modal.as_mut() {
+                    *dont_warn = b;
+                }
+            }
+            Message::TempNoticeOk => {
+                if let Some(Modal::TempOnDisk { dont_warn: true, .. }) = self.modal.take() {
+                    self.with_settings(|s| s.warn_temp_on_disk = false);
+                }
+            }
             Message::SetDefaultFormat(f) => self.with_settings(|s| s.default_format = f.0.into()),
             Message::SetDefaultLevel(l) => self.with_settings(|s| s.default_level = l.0),
             Message::SetScale(c) => self.with_settings(|s| s.scale = c.0 as f32 / 100.0),
@@ -1933,6 +1947,7 @@ impl App {
             if let Key::Named(Named::Enter) = key {
                 return match self.modal {
                     Some(Modal::Add(_)) => self.update(Message::AddOk),
+                    Some(Modal::TempOnDisk { .. }) => self.update(Message::TempNoticeOk),
                     Some(Modal::Extract(_)) => self.update(Message::ExOk),
                     Some(Modal::Password { .. }) => self.update(Message::PwOk),
                     Some(Modal::Confirm { .. }) => self.update(Message::ConfirmOk),

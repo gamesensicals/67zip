@@ -213,4 +213,6 @@ pub enum Modal {
     Bench(Option<Vec<zip67_core::bench::BenchResult>>),
     Settings,
     About,
+    /// A decrypted file had to go to a temporary folder on a disk.
+    TempOnDisk { folder: String, dont_warn: bool },
 }
