@@ -47,12 +47,15 @@ jobs:
           if-no-files-found: error
 
   audit:
+    # Fails on known vulnerabilities in dependencies; "unmaintained" and
+    # similar notices are printed as warnings. Runs cargo-audit directly
+    # because it needs no write access to the repository.
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - uses: rustsec/audit-check@v2
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo install cargo-audit --locked
+      - run: cargo audit
 
   fuzz:
     runs-on: ubuntu-24.04
