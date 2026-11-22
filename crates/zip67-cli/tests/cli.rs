@@ -78,8 +78,13 @@ fn secure_delete_after_archiving() {
     fs::create_dir_all(src.join("d")).unwrap();
     fs::write(src.join("d/a.txt"), b"top secret").unwrap();
     fs::write(src.join("b.bin"), vec![7u8; 200_000]).unwrap();
-    let st = Command::new(EXE).current_dir(tmp.path()).args(["a", "-bd", "-psecret", "-sshred", "vault.7z", "private"]).status().unwrap();
-    assert!(st.success());
+    let o = Command::new(EXE).current_dir(tmp.path()).args(["a", "-bd", "-psecret", "-sshred", "vault.7z", "private"]).output().unwrap();
+    // Exit code 1 is a warning: on SSDs and copy-on-write file systems 67z
+    // says that overwriting may not destroy the old data. That depends on
+    // the machine running the test, so both outcomes are fine, but a
+    // warning must explain itself.
+    let warned = String::from_utf8_lossy(&o.stderr).contains("may not be complete") || String::from_utf8_lossy(&o.stdout).contains("may not be complete");
+    assert!(o.status.success() || (o.status.code() == Some(1) && warned), "{o:?}");
     assert!(!src.exists(), "originals and their folders are gone");
     assert!(tmp.path().join("vault.7z").exists());
     assert!(fs::read_dir(tmp.path()).unwrap().all(|e| !e.unwrap().file_name().to_string_lossy().starts_with(".67zip")), "no staging leftovers");
