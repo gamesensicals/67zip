@@ -28,6 +28,9 @@ pub struct UpdateOptions {
     pub follow_symlinks: bool,
     pub exclude: Vec<String>,
     pub limits: Limits,
+    /// Write the new archive into this folder (see
+    /// [`CreateOptions::out_dir`]); the caller moves it over the original.
+    pub out_dir: Option<PathBuf>,
 }
 
 impl Default for UpdateOptions {
@@ -40,6 +43,7 @@ impl Default for UpdateOptions {
             follow_symlinks: false,
             exclude: Vec::new(),
             limits: Limits::default(),
+            out_dir: None,
         }
     }
 }
@@ -176,13 +180,14 @@ pub fn modify(path: &Path, changes: &Changes, opts: &UpdateOptions, progress: &P
             copts.method = Some(m);
         }
     }
-    let kept_total: u64 = reader.entries().iter().filter(|e| keep(e)).map(|e| e.size).sum();
-    let total = kept_total + new_items.iter().map(|i| i.size).sum::<u64>();
+    let kept_total: u64 = crate::util::total_size(reader.entries().iter().filter(|e| keep(e)).map(|e| e.size));
+    let total = kept_total.saturating_add(crate::util::total_size(new_items.iter().map(|i| i.size)));
     progress.set_total(total);
     copts.size_hint = Some(total);
 
     let orig_perm = fs::metadata(path)?.permissions();
-    let (out, file) = AtomicOutput::new(path)?;
+    let target = crate::create::staged_path(path, opts.out_dir.as_deref());
+    let (out, file) = AtomicOutput::new(&target)?;
     let mut writer = new_writer(file, &copts, None)?;
     {
         let mut rw = Rewrite { writer: writer.as_mut(), renames: &changes.rename, progress };
@@ -194,7 +199,7 @@ pub fn modify(path: &Path, changes: &Changes, opts: &UpdateOptions, progress: &P
     fs::set_permissions(&out.tmp, orig_perm)?;
     report.bytes_out = fs::metadata(&out.tmp)?.len();
     out.commit()?;
-    report.outputs = vec![path.to_path_buf()];
+    report.outputs = vec![target];
     Ok(report)
 }
 
@@ -215,6 +220,7 @@ pub fn add_files(archive: &Path, inputs: &[PathBuf], arc_dir: &str, create_opts:
         follow_symlinks: create_opts.follow_symlinks,
         exclude: create_opts.exclude.clone(),
         limits: Limits::default(),
+        out_dir: create_opts.out_dir.clone(),
     };
     modify(archive, &changes, &opts, progress)
 }

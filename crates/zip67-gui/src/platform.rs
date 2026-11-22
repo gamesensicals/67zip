@@ -43,6 +43,12 @@ pub fn places() -> Vec<(String, PathBuf, Icon)> {
     v
 }
 
+/// Desktop launchers: opening one may run any command it names.
+pub fn is_launcher(path: &Path) -> bool {
+    let name = path.file_name().map(|n| n.to_string_lossy().to_ascii_lowercase()).unwrap_or_default();
+    [".desktop", ".kdelnk", ".directory"].iter().any(|e| name.ends_with(e))
+}
+
 /// Opens a file with the desktop's default application.
 pub fn open_with_default(path: &Path) -> std::io::Result<()> {
     for cmd in ["xdg-open", "gio"] {
@@ -60,41 +66,57 @@ pub fn open_with_default(path: &Path) -> std::io::Result<()> {
 
 /// Private temporary folder of this process: `$XDG_RUNTIME_DIR/67zip/<pid>`
 /// (or `/tmp/67zip-<uid>/<pid>`), mode 0700. Leftovers of processes that no
-/// longer run are removed.
+/// longer run are removed. A shared folder such as /tmp is only used when
+/// the `67zip-<uid>` folder there is really ours: owned by this user, a
+/// real directory (not a link) and closed to others; otherwise a fresh
+/// folder with an unpredictable name is created.
 pub fn temp_base() -> PathBuf {
-    let uid = std::fs::metadata(home()).map(|m| m.uid()).unwrap_or(0);
+    let uid = rustix::process::getuid().as_raw();
     let root = match std::env::var_os("XDG_RUNTIME_DIR") {
-        Some(r) => PathBuf::from(r).join("67zip"),
-        None => std::env::temp_dir().join(format!("67zip-{uid}")),
+        Some(r) if private_dir(&PathBuf::from(&r), uid) => PathBuf::from(r).join("67zip"),
+        _ => std::env::temp_dir().join(format!("67zip-{uid}")),
     };
-    let _ = std::fs::DirBuilder::new().recursive(true).mode(0o700).create(&root);
+    let _ = std::fs::DirBuilder::new().mode(0o700).create(&root);
+    let root = if private_dir(&root, uid) { root } else { fresh_private_dir() };
     if let Ok(rd) = std::fs::read_dir(&root) {
         for e in rd.flatten() {
             let name = e.file_name().to_string_lossy().into_owned();
-            if let Ok(pid) = name.parse::<u32>() {
-                if !Path::new(&format!("/proc/{pid}")).exists() {
-                    let _ = std::fs::remove_dir_all(e.path());
-                }
+            if let Ok(pid) = name.parse::<u32>()
+                && !Path::new(&format!("/proc/{pid}")).exists()
+            {
+                let _ = std::fs::remove_dir_all(e.path());
             }
         }
     }
     let mine = root.join(std::process::id().to_string());
-    let _ = std::fs::DirBuilder::new().recursive(true).mode(0o700).create(&mine);
+    let _ = std::fs::remove_dir_all(&mine);
+    let _ = std::fs::DirBuilder::new().mode(0o700).create(&mine);
     mine
 }
 
-pub fn new_temp_dir(base: &Path) -> PathBuf {
-    let mut rnd = [0u8; 6];
-    let _ = getrandom_fill(&mut rnd);
-    let name: String = rnd.iter().map(|b| format!("{b:02x}")).collect();
-    let p = base.join(name);
-    let _ = std::fs::DirBuilder::new().recursive(true).mode(0o700).create(&p);
-    p
+/// A directory owned by `uid`, not a symbolic link, closed to others.
+fn private_dir(p: &Path, uid: u32) -> bool {
+    std::fs::symlink_metadata(p).is_ok_and(|m| m.is_dir() && m.uid() == uid && m.mode() & 0o077 == 0)
 }
 
-fn getrandom_fill(buf: &mut [u8]) -> std::io::Result<()> {
-    use std::io::Read;
-    std::fs::File::open("/dev/urandom")?.read_exact(buf)
+/// A new directory with a random name in the system temp folder (created
+/// here, so nobody else can own it).
+fn fresh_private_dir() -> PathBuf {
+    loop {
+        let p = std::env::temp_dir().join(format!("67zip-{}", zip67_core::util::random_hex(12)));
+        if std::fs::DirBuilder::new().mode(0o700).create(&p).is_ok() {
+            return p;
+        }
+    }
+}
+
+pub fn new_temp_dir(base: &Path) -> PathBuf {
+    loop {
+        let p = base.join(zip67_core::util::random_hex(8));
+        if std::fs::DirBuilder::new().mode(0o700).create(&p).is_ok() || !base.is_dir() {
+            return p;
+        }
+    }
 }
 
 fn url_encode(p: &str) -> String {

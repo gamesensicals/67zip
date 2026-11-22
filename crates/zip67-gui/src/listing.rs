@@ -204,8 +204,8 @@ impl Tree {
                 }
                 if !e.is_dir() {
                     let tot = t.totals.entry(cur.clone()).or_insert((0, 0, None));
-                    tot.0 += e.size;
-                    tot.1 += e.packed_size.unwrap_or(0);
+                    tot.0 = tot.0.saturating_add(e.size);
+                    tot.1 = tot.1.saturating_add(e.packed_size.unwrap_or(0));
                     tot.2 = tot.2.max(e.mtime);
                 }
                 cur = child_path;

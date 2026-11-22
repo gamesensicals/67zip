@@ -66,6 +66,7 @@ impl CreateSpec {
             delete_after: self.delete_after,
             exclude: self.exclude.clone(),
             size_hint: None,
+            out_dir: None,
         })
     }
 }
@@ -88,6 +89,16 @@ pub enum Request {
     Update { archive: PathBuf, password: Option<String>, changes: ChangesSpec, level: Option<u32>, threads: usize },
     Hash { paths: Vec<PathBuf>, kinds: Vec<HashKind> },
     Benchmark { seconds: u32, threads: usize, dict_size: u32 },
+}
+
+/// What the client sends first: the request, and for requests that write
+/// an archive, the private staging folder the worker may write into (the
+/// client moves the result into place after checking it).
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Job {
+    pub request: Request,
+    #[serde(default)]
+    pub stage: Option<PathBuf>,
 }
 
 /// Messages from the client after the request.

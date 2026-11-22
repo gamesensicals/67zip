@@ -12,7 +12,7 @@ use zip67_core::extract::{Answer, Prompt};
 use zip67_core::update::{Changes, UpdateOptions};
 use zip67_core::{open, Entry, Error, OpenOptions, Password, Progress};
 
-use crate::protocol::{Control, Event, Failure, HashResult, Question, Reply, Request};
+use crate::protocol::{Control, Event, Failure, HashResult, Job, Question, Reply, Request};
 use crate::sandbox::{apply, Access2};
 
 type Out = Arc<Mutex<io::Stdout>>;
@@ -34,6 +34,18 @@ fn parent(p: &Path) -> PathBuf {
         Some(d) if !d.as_os_str().is_empty() => d.to_path_buf(),
         _ => PathBuf::from("."),
     }
+}
+
+/// Files and folders a job needs, nothing more. With a staging folder,
+/// archives are written only there (never next to the target).
+pub fn access_for_job(job: &Job) -> Access2 {
+    let mut a = access_for(&job.request);
+    if let Some(stage) = &job.stage
+        && matches!(job.request, Request::Create { .. } | Request::AddFiles { .. } | Request::Update { .. })
+    {
+        a.write = vec![stage.clone()];
+    }
+    a
 }
 
 /// Files and folders a request needs, nothing more.
@@ -77,6 +89,33 @@ impl Prompt for WorkerPrompt {
 
 fn pw(p: &Option<String>) -> Option<Password> {
     p.clone().filter(|s| !s.is_empty()).map(Password::new)
+}
+
+/// Runs a job: like [`execute`], writing archives into the staging folder.
+pub fn execute_job(job: Job, progress: &Progress, prompt: &mut dyn Prompt) -> zip67_core::Result<Reply> {
+    let Some(stage) = job.stage else { return execute(job.request, progress, prompt) };
+    match job.request {
+        Request::Create { output, inputs, spec } => {
+            let opts = zip67_core::create::CreateOptions { out_dir: Some(stage), ..spec.to_options()? };
+            Ok(Reply::Created(zip67_core::create::create(&output, &inputs, &opts, progress)?))
+        }
+        Request::AddFiles { archive, inputs, arc_dir, spec } => {
+            let opts = zip67_core::create::CreateOptions { out_dir: Some(stage), ..spec.to_options()? };
+            Ok(Reply::Created(zip67_core::update::add_files(&archive, &inputs, &arc_dir, &opts, progress)?))
+        }
+        Request::Update { archive, password, changes, level, threads } => {
+            let ch = Changes { add: changes.add, delete: changes.delete, rename: changes.rename, new_dirs: changes.new_dirs };
+            let opts = UpdateOptions {
+                password: pw(&password),
+                level,
+                threads: if threads == 0 { zip67_core::util::default_threads() } else { threads },
+                out_dir: Some(stage),
+                ..Default::default()
+            };
+            Ok(Reply::Created(zip67_core::update::modify(&archive, &ch, &opts, progress)?))
+        }
+        other => execute(other, progress, prompt),
+    }
 }
 
 pub fn execute(req: Request, progress: &Progress, prompt: &mut dyn Prompt) -> zip67_core::Result<Reply> {
@@ -136,8 +175,8 @@ pub fn run() -> i32 {
     if stdin.lock().read_line(&mut first).is_err() || first.len() > 64 << 20 {
         return 2;
     }
-    let req: Request = match serde_json::from_str(first.trim()) {
-        Ok(r) => r,
+    let job: Job = match serde_json::from_str::<Job>(first.trim()).or_else(|_| serde_json::from_str::<Request>(first.trim()).map(|request| Job { request, stage: None })) {
+        Ok(j) => j,
         Err(e) => {
             let out: Out = Arc::new(Mutex::new(io::stdout()));
             send(&out, &Event::Failed(Failure { kind: crate::protocol::FailKind::Invalid, message: format!("bad request: {e}") }));
@@ -145,7 +184,7 @@ pub fn run() -> i32 {
         }
     };
     // Lock down before anything else happens (and before any thread starts).
-    let status = apply(&access_for(&req));
+    let status = apply(&access_for_job(&job));
     let out: Out = Arc::new(Mutex::new(io::stdout()));
     send(&out, &Event::Hello { version: zip67_core::VERSION.into(), sandbox: status });
 
@@ -181,7 +220,7 @@ pub fn run() -> i32 {
         })
     };
     let mut prompt = WorkerPrompt { out: out.clone(), answers: arx };
-    let result = execute(req, &progress, &mut prompt);
+    let result = execute_job(job, &progress, &mut prompt);
     done.store(true, Ordering::Relaxed);
     let _ = ticker.join();
     send(&out, &Event::Progress(progress.snapshot()));
@@ -194,5 +233,21 @@ pub fn run() -> i32 {
             send(&out, &Event::Failed(Failure::from(&e)));
             1
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::protocol::CreateSpec;
+
+    #[test]
+    fn staged_jobs_write_only_to_the_stage() {
+        let req = Request::Create { output: "/home/u/out.7z".into(), inputs: vec!["/home/u/doc".into()], spec: CreateSpec::default() };
+        let a = access_for_job(&Job { request: req.clone(), stage: Some("/home/u/.67zip-x".into()) });
+        assert_eq!(a.write, vec![PathBuf::from("/home/u/.67zip-x")]);
+        assert_eq!(a.read, vec![PathBuf::from("/home/u/doc")]);
+        let a = access_for_job(&Job { request: req, stage: None });
+        assert_eq!(a.write, vec![PathBuf::from("/home/u")]);
     }
 }

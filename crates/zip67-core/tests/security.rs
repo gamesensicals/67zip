@@ -184,3 +184,23 @@ fn garbage_never_panics() {
         let _ = open(&p, &OpenOptions::default());
     }
 }
+
+#[test]
+fn archive_permissions_respect_the_umask() {
+    use std::os::unix::fs::PermissionsExt;
+    let tmp = tempfile::tempdir().unwrap();
+    // World-writable, setuid file: neither may survive extraction.
+    let zip = crafted_zip(&[("open.sh", b"#!/bin/sh\n", 0o104777)], false);
+    let p = tmp.path().join("perm.zip");
+    fs::write(&p, zip).unwrap();
+    let dest = tmp.path().join("out");
+    extract(&p, &dest).unwrap();
+    let mode = fs::metadata(dest.join("open.sh")).unwrap().permissions().mode() & 0o7777;
+    let umask = {
+        let old = rustix::process::umask(rustix::fs::Mode::from_raw_mode(0o022));
+        rustix::process::umask(old);
+        old.as_raw_mode()
+    };
+    assert_eq!(mode, 0o777 & !umask, "got {mode:o}");
+    assert_eq!(mode & 0o7002, 0, "setuid or world-writable: {mode:o}");
+}

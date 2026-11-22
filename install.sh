@@ -2,7 +2,8 @@
 # Builds and installs 67zip for the current user (~/.local) or, with
 # --system, for everybody (/usr/local, needs root).
 #   ./install.sh            build + install for this user
-#   ./install.sh --system   build + install system-wide
+#   ./install.sh --system   install system-wide (run as root after building
+#                           as your user; root never compiles)
 #   ./install.sh --uninstall [--system]
 set -eu
 cd "$(dirname "$0")"
@@ -40,10 +41,19 @@ if [ "$UNINSTALL" = 1 ]; then
   exit 0
 fi
 
-if ! command -v cargo >/dev/null 2>&1; then
-  echo "Rust is needed to build 67zip: https://rustup.rs"; exit 1
+if [ "$(id -u)" = 0 ]; then
+  # Never compile as root: building runs code from every dependency.
+  if [ ! -x target/release/67zip ] || [ ! -x target/release/67z ]; then
+    echo "Build 67zip as your normal user first (./install.sh, or: cargo build --release --locked -p zip67-cli -p zip67-gui),"
+    echo "then run 'sudo ./install.sh --system' to install the built programs."
+    exit 1
+  fi
+else
+  if ! command -v cargo >/dev/null 2>&1; then
+    echo "Rust is needed to build 67zip: https://rustup.rs"; exit 1
+  fi
+  cargo build --release --locked -p zip67-cli -p zip67-gui
 fi
-cargo build --release --locked -p zip67-cli -p zip67-gui
 
 install -Dm755 target/release/67zip "$BIN/67zip"
 install -Dm755 target/release/67z "$BIN/67z"

@@ -337,7 +337,7 @@ impl App {
         let left = if sel.is_empty() {
             format!("{n} {}", if n == 1 { "item" } else { "items" })
         } else {
-            let total: u64 = sel.iter().filter_map(|r| r.size).sum();
+            let total: u64 = zip67_core::util::total_size(sel.iter().filter_map(|r| r.size));
             format!("{} of {n} selected · {}", sel.len(), human_size(total))
         };
         let right = match &self.location {

@@ -5406,6 +5406,7 @@ dependencies = [
  "jiff",
  "mundy",
  "rfd",
+ "rustix 1.1.6",
  "serde",
  "serde_json",
  "zip67-core",

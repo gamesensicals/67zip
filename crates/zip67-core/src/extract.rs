@@ -197,6 +197,26 @@ pub struct FsVisitor<'a> {
     archive_size: u64,
     total_written: u64,
     cancelled: bool,
+    /// The user's umask: permissions from an archive never exceed what new
+    /// files would get anyway (no world-writable files from a crafted
+    /// archive), like tar and 7-Zip do for normal users.
+    umask: u32,
+    /// Destination on disk, for free-space checks while writing.
+    dest: PathBuf,
+    next_space_check: u64,
+}
+
+/// Extraction stops when less than this is left on the destination disk
+/// (archives whose sizes are unknown, such as a bare .gz, could otherwise
+/// fill it completely).
+const MIN_FREE_SPACE: u64 = 256 << 20;
+
+/// The process umask (read by setting and restoring it).
+fn current_umask() -> u32 {
+    use rustix::fs::Mode;
+    let old = rustix::process::umask(Mode::from_raw_mode(0o022));
+    rustix::process::umask(old);
+    old.as_raw_mode() & 0o777
 }
 
 impl<'a> FsVisitor<'a> {
@@ -214,6 +234,9 @@ impl<'a> FsVisitor<'a> {
             archive_size,
             total_written: 0,
             cancelled: false,
+            umask: current_umask(),
+            dest: dest.to_path_buf(),
+            next_space_check: 0,
         })
     }
 
@@ -331,6 +354,12 @@ impl<'a> FsVisitor<'a> {
 
     fn check_limits(&mut self, more: u64) -> Result<()> {
         self.total_written += more;
+        if self.total_written >= self.next_space_check {
+            self.next_space_check = self.total_written + (64 << 20);
+            if free_space(&self.dest).is_some_and(|f| f < MIN_FREE_SPACE) {
+                return Err(Error::limit("the destination disk is almost full"));
+            }
+        }
         let l = &self.opts.limits;
         if self.total_written > l.max_total_size {
             return Err(Error::limit("extracted data exceeds the total size limit"));
@@ -358,7 +387,7 @@ impl<'a> FsVisitor<'a> {
         for (p, s, n, mode) in v {
             if let (Some(m), true) = (mode, self.opts.preserve_permissions) {
                 // Always keep the owner able to enter and write the folder.
-                let _ = self.root.set_permissions(&p, cap_std::fs::Permissions::from_mode((m & 0o777) | 0o700));
+                let _ = self.root.set_permissions(&p, cap_std::fs::Permissions::from_mode(((m & 0o777) | 0o700) & !self.umask));
             }
             self.set_times(&p, s, n, true);
         }
@@ -412,7 +441,7 @@ impl EntryVisitor for FsVisitor<'_> {
         if self.opts.preserve_permissions {
             if let Some(m) = entry.mode {
                 // No setuid/setgid/sticky bits from untrusted archives.
-                let _ = f.set_permissions(cap_std::fs::Permissions::from_mode(m & 0o777));
+                let _ = f.set_permissions(cap_std::fs::Permissions::from_mode(m & 0o777 & !self.umask));
             }
         }
         drop(f);
@@ -504,7 +533,7 @@ pub fn extract_to(
 ) -> Result<ExtractReport> {
     let matcher = selection.matcher();
     let selected: Vec<&Entry> = reader.entries().iter().filter(|e| matcher(e)).collect();
-    let total: u64 = selected.iter().map(|e| e.size).sum();
+    let total: u64 = crate::util::total_size(selected.iter().map(|e| e.size));
     progress.set_total(total);
     progress.set_files_total(selected.len() as u64);
     let unsafe_count = selected.iter().filter(|e| e.unsafe_path).count();
@@ -559,7 +588,7 @@ pub fn test(reader: &mut dyn ArchiveReader, selection: &Selection, progress: &Pr
         }
     }
     let matcher = selection.matcher();
-    let total: u64 = reader.entries().iter().filter(|e| matcher(e)).map(|e| e.size).sum();
+    let total: u64 = crate::util::total_size(reader.entries().iter().filter(|e| matcher(e)).map(|e| e.size));
     progress.set_total(total);
     let mut t = Tester { report: ExtractReport::default() };
     reader.extract(&*matcher, &mut t, progress)?;

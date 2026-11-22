@@ -13,4 +13,4 @@ Exec=67zip --add %F
 [Desktop Action compressZip]
 Name=Compress to .zip
 Icon=io.github.gamesensicals.SixtySevenZip
-Exec=sh -c '67z a -bd -tzip "$1.zip" "$@"' sh %F
+Exec=sh -c '67z a -bd -tzip -- "$1.zip" "$@"' sh %F

@@ -1,22 +1,152 @@
 //! Starting a worker and talking to it (used by the GUI).
 
+use std::ffi::OsString;
 use std::io::{BufRead, BufReader, Write};
-use std::path::Path;
+use std::os::unix::fs::DirBuilderExt;
+use std::path::{Component, Path, PathBuf};
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::mpsc::{self, Receiver, TryRecvError};
 
-use crate::protocol::{Control, Event, FailKind, Failure, Request};
+use crate::protocol::{Control, Event, FailKind, Failure, Job, Reply, Request};
 
 pub struct WorkerHandle {
     child: Child,
     stdin: Option<ChildStdin>,
     events: Receiver<Event>,
     finished: bool,
+    stage: Option<Staging>,
+}
+
+/// A private folder next to an archive being written. The sandboxed worker
+/// may write only there; afterwards this (unsandboxed) side checks what it
+/// produced and renames it into place.
+struct Staging {
+    dir: PathBuf,
+    target_dir: PathBuf,
+    name: OsString,
+    /// Replace an existing archive (update) instead of creating new files.
+    replace: bool,
+    /// For "delete files after archiving": only these and what is inside
+    /// them may be deleted.
+    delete_roots: Vec<PathBuf>,
+}
+
+fn parent_dir(p: &Path) -> PathBuf {
+    match p.parent() {
+        Some(d) if !d.as_os_str().is_empty() => d.to_path_buf(),
+        _ => PathBuf::from("."),
+    }
+}
+
+impl Staging {
+    fn for_request(req: &Request) -> std::io::Result<Option<Staging>> {
+        let (target, replace, delete_roots) = match req {
+            Request::Create { output, inputs, spec } => (output, false, if spec.delete_after { inputs.clone() } else { vec![] }),
+            Request::AddFiles { archive, inputs, spec, .. } => {
+                let exists = archive.exists();
+                (archive, exists, if spec.delete_after && !exists { inputs.clone() } else { vec![] })
+            }
+            Request::Update { archive, .. } => (archive, true, vec![]),
+            _ => return Ok(None),
+        };
+        let Some(name) = target.file_name().map(|n| n.to_os_string()) else { return Ok(None) };
+        let target_dir = parent_dir(target);
+        let dir = target_dir.join(format!(".67zip-{}", zip67_core::util::random_hex(8)));
+        std::fs::DirBuilder::new().mode(0o700).create(&dir)?;
+        Ok(Some(Staging { dir, target_dir, name, replace, delete_roots }))
+    }
+
+    /// Checks the worker's outputs and moves them into place. Paths the
+    /// worker reports are never trusted beyond the staging folder.
+    fn finish(&self, report: &mut zip67_core::create::CreateReport) -> Result<(), String> {
+        if report.outputs.is_empty() || self.replace && report.outputs.len() != 1 {
+            return Err("the worker reported unexpected output files".into());
+        }
+        let base = self.name.to_string_lossy().into_owned();
+        let mut moves = Vec::new();
+        for out in &report.outputs {
+            let name = out.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+            let named_ok = name == base
+                || !self.replace && name.strip_prefix(&base).and_then(|r| r.strip_prefix('.')).is_some_and(|d| !d.is_empty() && d.bytes().all(|b| b.is_ascii_digit()));
+            let inside = out.parent() == Some(self.dir.as_path());
+            let regular = std::fs::symlink_metadata(out).is_ok_and(|m| m.file_type().is_file());
+            if !(named_ok && inside && regular) {
+                return Err(format!("the worker reported an unexpected output file: {}", out.display()));
+            }
+            moves.push((out.clone(), self.target_dir.join(&name)));
+        }
+        let mut done = Vec::new();
+        for (from, to) in moves {
+            let res = if self.replace { std::fs::rename(&from, &to) } else { rename_no_replace(&from, &to) };
+            if let Err(e) = res {
+                // Do not leave half a set of volumes behind.
+                for d in &done {
+                    let _ = std::fs::remove_file(d);
+                }
+                return Err(format!("{}: {e}", to.display()));
+            }
+            done.push(to);
+        }
+        report.outputs = done;
+        let roots: Vec<PathBuf> = self.delete_roots.iter().map(|r| lexical(r)).collect();
+        for p in std::mem::take(&mut report.delete_later) {
+            let clean = lexical(&p);
+            if p.components().any(|c| c == Component::ParentDir) || !roots.iter().any(|r| clean.starts_with(r)) {
+                report.warnings.push(format!("not deleted (outside the archived files): {}", p.display()));
+                continue;
+            }
+            let is_dir = std::fs::symlink_metadata(&p).is_ok_and(|m| m.is_dir());
+            let res = if is_dir { std::fs::remove_dir(&p) } else { std::fs::remove_file(&p) };
+            if let (Err(e), false) = (res, is_dir) {
+                report.warnings.push(format!("could not delete {}: {e}", p.display()));
+            }
+        }
+        Ok(())
+    }
+}
+
+impl Drop for Staging {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.dir);
+    }
+}
+
+/// `p` made absolute (from the current folder) without following links.
+fn lexical(p: &Path) -> PathBuf {
+    let abs = if p.is_absolute() { p.to_path_buf() } else { std::env::current_dir().unwrap_or_default().join(p) };
+    let mut out = PathBuf::new();
+    for c in abs.components() {
+        match c {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                out.pop();
+            }
+            other => out.push(other),
+        }
+    }
+    out
+}
+
+fn rename_no_replace(from: &Path, to: &Path) -> std::io::Result<()> {
+    use rustix::fs::{renameat_with, RenameFlags, CWD};
+    match renameat_with(CWD, from, CWD, to, RenameFlags::NOREPLACE) {
+        Ok(()) => Ok(()),
+        // File systems without RENAME_NOREPLACE.
+        Err(rustix::io::Errno::INVAL) | Err(rustix::io::Errno::NOSYS) => {
+            if to.symlink_metadata().is_ok() {
+                return Err(std::io::Error::from(std::io::ErrorKind::AlreadyExists));
+            }
+            std::fs::rename(from, to)
+        }
+        Err(e) => Err(e.into()),
+    }
 }
 
 impl WorkerHandle {
     /// Starts `exe --worker` and sends the request.
     pub fn spawn(exe: &Path, req: &Request) -> std::io::Result<Self> {
+        let stage = Staging::for_request(req)?;
+        let job = Job { request: req.clone(), stage: stage.as_ref().map(|s| s.dir.clone()) };
         let mut child = Command::new(exe)
             .arg("--worker")
             .stdin(Stdio::piped())
@@ -26,7 +156,7 @@ impl WorkerHandle {
             .spawn()?;
         let mut stdin = child.stdin.take().ok_or_else(|| std::io::Error::other("no stdin"))?;
         let stdout = child.stdout.take().ok_or_else(|| std::io::Error::other("no stdout"))?;
-        let line = serde_json::to_string(req).map_err(std::io::Error::other)?;
+        let line = serde_json::to_string(&job).map_err(std::io::Error::other)?;
         writeln!(stdin, "{line}")?;
         stdin.flush()?;
         let (tx, rx) = mpsc::channel();
@@ -44,7 +174,7 @@ impl WorkerHandle {
                 }
             }
         });
-        Ok(WorkerHandle { child, stdin: Some(stdin), events: rx, finished: false })
+        Ok(WorkerHandle { child, stdin: Some(stdin), events: rx, finished: false, stage })
     }
 
     fn control(&mut self, c: &Control) {
@@ -76,7 +206,7 @@ impl WorkerHandle {
                 if matches!(ev, Event::Done(_) | Event::Failed(_)) {
                     self.finished = true;
                 }
-                Some(ev)
+                Some(self.settle(ev))
             }
             Err(TryRecvError::Empty) => None,
             Err(TryRecvError::Disconnected) => {
@@ -97,11 +227,27 @@ impl WorkerHandle {
                 if matches!(ev, Event::Done(_) | Event::Failed(_)) {
                     self.finished = true;
                 }
-                Some(ev)
+                Some(self.settle(ev))
             }
             Err(_) => {
                 self.finished = true;
                 Some(Event::Failed(Failure { kind: FailKind::WorkerCrashed, message: "the worker process stopped unexpectedly".into() }))
+            }
+        }
+    }
+
+    /// Moves a staged archive into place when the worker is done.
+    fn settle(&mut self, ev: Event) -> Event {
+        let Some(stage) = self.stage.take() else { return ev };
+        match ev {
+            Event::Done(Reply::Created(mut rep)) => match stage.finish(&mut rep) {
+                Ok(()) => Event::Done(Reply::Created(rep)),
+                Err(message) => Event::Failed(Failure { kind: FailKind::Io, message }),
+            },
+            Event::Done(_) | Event::Failed(_) => ev,
+            other => {
+                self.stage = Some(stage);
+                other
             }
         }
     }
@@ -118,5 +264,78 @@ impl Drop for WorkerHandle {
             let _ = self.child.kill();
         }
         let _ = self.child.wait();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use zip67_core::create::CreateReport;
+
+    fn stage(root: &Path, replace: bool, delete_roots: Vec<PathBuf>) -> Staging {
+        let dir = root.join(".67zip-test");
+        std::fs::create_dir(&dir).unwrap();
+        Staging { dir, target_dir: root.to_path_buf(), name: "a.7z".into(), replace, delete_roots }
+    }
+
+    #[test]
+    fn outputs_must_stay_in_the_staging_folder() {
+        let tmp = std::env::temp_dir().join(format!("67zip-stage-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+        // Reported file outside the staging folder.
+        let s = stage(&tmp, false, vec![]);
+        std::fs::write(tmp.join("a.7z.evil"), b"x").unwrap();
+        let mut r = CreateReport { outputs: vec![tmp.join("a.7z.evil")], ..Default::default() };
+        assert!(s.finish(&mut r).is_err());
+        drop(s);
+        // A symlink in the staging folder, and a wrong name.
+        let s = stage(&tmp, false, vec![]);
+        std::os::unix::fs::symlink("/etc/passwd", s.dir.join("a.7z")).unwrap();
+        let mut r = CreateReport { outputs: vec![s.dir.join("a.7z")], ..Default::default() };
+        assert!(s.finish(&mut r).is_err());
+        std::fs::write(s.dir.join("b.7z"), b"x").unwrap();
+        let mut r = CreateReport { outputs: vec![s.dir.join("b.7z")], ..Default::default() };
+        assert!(s.finish(&mut r).is_err());
+        drop(s);
+        // An update must produce exactly one file.
+        let s = stage(&tmp, true, vec![]);
+        std::fs::write(s.dir.join("a.7z"), b"x").unwrap();
+        std::fs::write(s.dir.join("a.7z.001"), b"x").unwrap();
+        let mut r = CreateReport { outputs: vec![s.dir.join("a.7z"), s.dir.join("a.7z.001")], ..Default::default() };
+        assert!(s.finish(&mut r).is_err());
+        drop(s);
+        // Never over an existing file when creating.
+        std::fs::write(tmp.join("a.7z"), b"old").unwrap();
+        let s = stage(&tmp, false, vec![]);
+        std::fs::write(s.dir.join("a.7z"), b"new").unwrap();
+        let mut r = CreateReport { outputs: vec![s.dir.join("a.7z")], ..Default::default() };
+        assert!(s.finish(&mut r).is_err());
+        assert_eq!(std::fs::read(tmp.join("a.7z")).unwrap(), b"old");
+        drop(s);
+        assert!(!tmp.join(".67zip-test").exists(), "staging folder removed");
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn deletes_only_inside_the_inputs() {
+        let tmp = std::env::temp_dir().join(format!("67zip-stage-del-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(tmp.join("in")).unwrap();
+        std::fs::write(tmp.join("in/f"), b"x").unwrap();
+        std::fs::write(tmp.join("precious"), b"x").unwrap();
+        let s = stage(&tmp, false, vec![tmp.join("in")]);
+        std::fs::write(s.dir.join("a.7z"), b"x").unwrap();
+        let mut r = CreateReport {
+            outputs: vec![s.dir.join("a.7z")],
+            delete_later: vec![tmp.join("in/f"), tmp.join("precious"), tmp.join("in/../precious")],
+            ..Default::default()
+        };
+        s.finish(&mut r).unwrap();
+        assert!(!tmp.join("in/f").exists());
+        assert!(tmp.join("precious").exists());
+        assert_eq!(r.warnings.len(), 2);
+        assert!(tmp.join("a.7z").exists());
+        let _ = std::fs::remove_dir_all(&tmp);
     }
 }

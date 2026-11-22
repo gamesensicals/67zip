@@ -9,6 +9,7 @@ use std::time::Duration;
 
 use zip67_core::extract::{Answer, Prompt};
 use zip67_core::util::{format_local_time, human_size, safe_display};
+use zip67_core::progress::Snapshot;
 use zip67_core::{Entry, Progress};
 
 pub fn read_line() -> Option<String> {
@@ -47,13 +48,20 @@ pub struct TtyPrompt;
 
 impl Prompt for TtyPrompt {
     fn overwrite(&mut self, path: &str, existing_size: u64, existing_mtime: Option<i64>, entry: &Entry) -> Answer {
+        ask_overwrite(path, existing_size, existing_mtime, entry.size, entry.mtime)
+    }
+}
+
+/// Asks whether to overwrite an existing file.
+pub fn ask_overwrite(path: &str, existing_size: u64, existing_mtime: Option<i64>, new_size: u64, new_mtime: Option<i64>) -> Answer {
+    {
         if !interactive() {
             return Answer::No;
         }
         clear_line();
         eprintln!("\nFile already exists: {}", safe_display(path));
         eprintln!("  existing: {:>12}  {}", human_size(existing_size), existing_mtime.map(format_local_time).unwrap_or_default());
-        eprintln!("  new:      {:>12}  {}", human_size(entry.size), entry.mtime.map(format_local_time).unwrap_or_default());
+        eprintln!("  new:      {:>12}  {}", human_size(new_size), new_mtime.map(format_local_time).unwrap_or_default());
         loop {
             eprint!("Overwrite? (Y)es / (N)o / (A)lways / (S)kip all / A(u)to rename / (Q)uit? ");
             let _ = io::stderr().flush();
@@ -84,14 +92,20 @@ pub struct ProgressLine {
 
 impl ProgressLine {
     pub fn start(progress: &Progress, enabled: bool) -> Self {
+        let p = progress.clone();
+        Self::start_with(move || p.snapshot(), enabled)
+    }
+
+    /// Shows snapshots from `get` (e.g. the last one a worker sent).
+    pub fn start_with(get: impl Fn() -> Snapshot + Send + 'static, enabled: bool) -> Self {
         let stop = Arc::new(AtomicBool::new(false));
         let handle = if enabled && io::stderr().is_terminal() {
-            let (p, s) = (progress.clone(), stop.clone());
+            let s = stop.clone();
             Some(std::thread::spawn(move || {
                 while !s.load(Ordering::Relaxed) {
                     std::thread::sleep(Duration::from_millis(200));
-                    let snap = p.snapshot();
-                    let pct = if snap.total > 0 { (snap.done.min(snap.total) * 100 / snap.total) as u32 } else { 0 };
+                    let snap = get();
+                    let pct = snap.done.min(snap.total).saturating_mul(100).checked_div(snap.total).unwrap_or(0);
                     let mut name = safe_display(&snap.current);
                     if name.chars().count() > 50 {
                         name = format!("…{}", name.chars().rev().take(49).collect::<Vec<_>>().into_iter().rev().collect::<String>());

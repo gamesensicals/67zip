@@ -570,7 +570,7 @@ impl App {
                 _ => {
                     self.modal = Some(Modal::Report(ReportView {
                         title: format!("{} failed", job.title),
-                        summary: f.message,
+                        summary: zip67_core::util::safe_display(&f.message),
                         lines: Vec::new(),
                         ok: false,
                     }));
@@ -644,7 +644,7 @@ impl App {
                                     dest.display(),
                                     rep.errors.len() + rep.warnings.len()
                                 ),
-                                lines: rep.errors.iter().map(|(p, e)| format!("{}: {e}", zip67_core::util::safe_display(p))).chain(rep.warnings.iter().map(|w| zip67_core::util::safe_display(w))).collect(),
+                                lines: rep.errors.iter().map(|(p, e)| format!("{}: {}", zip67_core::util::safe_display(p), zip67_core::util::safe_display(e))).chain(rep.warnings.iter().map(|w| zip67_core::util::safe_display(w))).collect(),
                                 ok,
                             }));
                         }
@@ -654,7 +654,7 @@ impl App {
                         if !rep.errors.is_empty() {
                             self.modal = Some(Modal::Report(ReportView {
                                 title: "Could not open the file".into(),
-                                summary: rep.errors.iter().map(|(_, e)| e.clone()).collect::<Vec<_>>().join("; "),
+                                summary: rep.errors.iter().map(|(_, e)| zip67_core::util::safe_display(e)).collect::<Vec<_>>().join("; "),
                                 lines: vec![],
                                 ok: false,
                             }));
@@ -663,6 +663,10 @@ impl App {
                             let req = Request::List { archive: path.clone(), password: None };
                             let purpose = Purpose::Open { file: path, display: nested_display, host_dir, nested: true, folder: String::new(), password: None, inner_dir: folder };
                             self.start_job(req, purpose, "Opening".into());
+                        } else if platform::is_launcher(&path) {
+                            // A desktop launcher runs a command when opened; one from
+                            // an archive could pose as a document.
+                            self.toast("Launcher files (.desktop) are not opened from archives. Extract it and check it first.".to_string(), true);
                         } else if let Err(e) = platform::open_with_default(&path) {
                             self.toast(e.to_string(), true);
                         } else {
@@ -684,7 +688,7 @@ impl App {
                 self.modal = Some(Modal::Report(ReportView {
                     title: if ok { "No errors found".into() } else { "Errors found".into() },
                     summary: format!("Tested {} files ({}).", rep.files, zip67_core::util::human_size(rep.bytes)),
-                    lines: rep.errors.iter().map(|(p, e)| format!("{}: {e}", zip67_core::util::safe_display(p))).collect(),
+                    lines: rep.errors.iter().map(|(p, e)| format!("{}: {}", zip67_core::util::safe_display(p), zip67_core::util::safe_display(e))).collect(),
                     ok,
                 }));
                 Task::none()
@@ -788,7 +792,8 @@ impl App {
                 let Some(a) = self.current_archive() else { return Task::none() };
                 let dir = platform::new_temp_dir(&self.temp_base);
                 let target = dir.join(&r.name);
-                let options = ExtractOptions { path_mode: PathMode::Flat, overwrite: Overwrite::Always, ..Default::default() };
+                // Opened files never keep execute permissions from the archive.
+                let options = ExtractOptions { path_mode: PathMode::Flat, overwrite: Overwrite::Always, preserve_permissions: false, ..Default::default() };
                 let parent = r.arc_path.rsplit_once('/').map(|(d, _)| d.to_string()).unwrap_or_default();
                 let req = Request::Extract { archive: a.file.clone(), password: a.password.clone(), dest: dir, selection: Selection::Indices(vec![idx]), options };
                 let nested_display = format!("{}/{}", a.display, r.arc_path);
@@ -1089,7 +1094,7 @@ impl App {
                 lines.push(("Archive".into(), zip67_core::util::safe_display(&a.display)));
                 lines.push(("Type".into(), zip67_core::ArchiveType::from_id(&a.archive_type).map(|t| t.display_name()).unwrap_or(a.archive_type.clone())));
                 lines.push(("Size on disk".into(), zip67_core::util::human_size(i.physical_size)));
-                let total: u64 = a.entries.iter().map(|e| e.size).sum();
+                let total: u64 = zip67_core::util::total_size(a.entries.iter().map(|e| e.size));
                 lines.push(("Unpacked size".into(), zip67_core::util::human_size(total)));
                 if i.physical_size > 0 && total > 0 {
                     lines.push(("Ratio".into(), format!("{:.1}%", 100.0 * i.physical_size as f64 / total as f64)));
@@ -1173,7 +1178,7 @@ impl App {
                     }
                 }
                 if rows.len() > 1 {
-                    let total: u64 = rows.iter().filter_map(|r| r.size).sum();
+                    let total: u64 = zip67_core::util::total_size(rows.iter().filter_map(|r| r.size));
                     lines.push(("Selected".into(), format!("{} items, {}", rows.len(), zip67_core::util::human_size(total))));
                 }
             }

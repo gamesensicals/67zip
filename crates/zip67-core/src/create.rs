@@ -110,6 +110,11 @@ pub struct CreateOptions {
     /// Total bytes that will be added, if known; lets multi-threaded
     /// encoders split the work evenly.
     pub size_hint: Option<u64>,
+    /// Write the finished archive (and its parts) into this folder instead
+    /// of next to the target, and leave `delete_after` to the caller via
+    /// [`CreateReport::delete_later`]. The sandboxed worker uses this: it
+    /// may only write to a private staging folder.
+    pub out_dir: Option<PathBuf>,
 }
 
 impl Default for CreateOptions {
@@ -128,6 +133,7 @@ impl Default for CreateOptions {
             delete_after: false,
             exclude: Vec::new(),
             size_hint: None,
+            out_dir: None,
         }
     }
 }
@@ -153,6 +159,10 @@ pub struct CreateReport {
     pub bytes_out: u64,
     pub outputs: Vec<PathBuf>,
     pub warnings: Vec<String>,
+    /// Sources to delete once the outputs are in place (`delete_after`
+    /// with `out_dir`): files first, then folders deepest first.
+    #[serde(default)]
+    pub delete_later: Vec<PathBuf>,
 }
 
 /// Simple `*`/`?` wildcard match.
@@ -394,7 +404,8 @@ pub fn create(output: &Path, inputs: &[PathBuf], opts: &CreateOptions, progress:
     let total: u64 = items.iter().map(|i| i.size).sum();
     progress.set_total(total);
     progress.set_files_total(items.len() as u64);
-    let (out, file) = AtomicOutput::new(output)?;
+    let target = staged_path(output, opts.out_dir.as_deref());
+    let (out, file) = AtomicOutput::new(&target)?;
     let single = items.first().map(|i| i.arcname.clone());
     let opts = CreateOptions { size_hint: opts.size_hint.or(Some(total)), ..opts.clone() };
     let mut writer = new_writer(file, &opts, single.as_deref())?;
@@ -403,17 +414,35 @@ pub fn create(output: &Path, inputs: &[PathBuf], opts: &CreateOptions, progress:
     let tmp_len = fs::metadata(&out.tmp)?.len();
     report.bytes_out = tmp_len;
     out.commit()?;
-    report.outputs = vec![output.to_path_buf()];
+    report.outputs = vec![target.clone()];
     if let Some(vs) = opts.volume_size {
         if vs > 0 && tmp_len > vs {
-            report.outputs = crate::split::split_file(output, vs, progress)?;
-            fs::remove_file(output)?;
+            report.outputs = crate::split::split_file(&target, vs, progress)?;
+            fs::remove_file(&target)?;
         }
     }
     if opts.delete_after {
-        delete_sources(&items, &mut report);
+        if opts.out_dir.is_some() {
+            report.delete_later = sources_to_delete(&items);
+        } else {
+            delete_sources(&items, &mut report);
+        }
     }
     Ok(report)
+}
+
+/// Where the archive for `output` is written: in `out_dir` when given.
+pub fn staged_path(output: &Path, out_dir: Option<&Path>) -> PathBuf {
+    match (out_dir, output.file_name()) {
+        (Some(d), Some(name)) => d.join(name),
+        _ => output.to_path_buf(),
+    }
+}
+
+fn sources_to_delete(items: &[Item]) -> Vec<PathBuf> {
+    let files = items.iter().filter(|i| i.kind != EntryKind::Dir).filter_map(|i| i.source.clone());
+    let dirs = items.iter().rev().filter(|i| i.kind == EntryKind::Dir).filter_map(|i| i.source.clone());
+    files.chain(dirs).collect()
 }
 
 fn delete_sources(items: &[Item], report: &mut CreateReport) {

@@ -30,7 +30,7 @@ modern interface that looks the same on every distribution.
 | gz, bz2, xz, zst, lzma, lz | yes | yes | single files |
 | Split archives | yes | yes | open from any part: `.001`, `.part1.7z` / `.part01.rar`-style names, `.7z.part1`, PKZIP `.z01` … `.zip`, RAR `.rar` + `.r00` …, `split`'s `.aa`; create `.001` parts with "Split into" or `-v100m` |
 | iso | yes | no | ISO 9660 with Rock Ridge (permissions, links) and Joliet (Unicode names) |
-| rar | yes | no | RAR5 and RAR 2.9–4.x (WinRAR 3.0 and later): solid, multi-volume (`.part1.rar` or `.rar` + `.r00`), self-extracting `.exe`, AES-256 / AES-128 including encrypted file names, BLAKE2sp checksums, links. Not the RAR 1.5 / 2.0 compression of the 1990s |
+| rar | yes | no | RAR5 and RAR 2.0–4.x: solid, multi-volume (`.part1.rar` or `.rar` + `.r00`), self-extracting `.exe`/`.sfx`, AES-256 / AES-128 including encrypted file names, BLAKE2sp checksums, links, comments, file versions. Not supported: RAR 1.5 compression and RAR 2.0 encryption (1990s archives) |
 
 ## Install
 
@@ -39,8 +39,9 @@ Building needs [Rust](https://rustup.rs) 1.88 or newer.
 ```sh
 git clone https://github.com/gamesensicals/67zip
 cd 67zip
-./install.sh            # installs for your user into ~/.local
-./install.sh --system   # or for everyone into /usr/local (run as root)
+./install.sh                  # builds and installs for your user into ~/.local
+sudo ./install.sh --system    # or for everyone into /usr/local, after building
+                              # as your user (root never compiles anything)
 ```
 
 The script installs:
@@ -130,9 +131,23 @@ What a malicious archive cannot do in 67zip:
 - **Run code.** RAR 2.9 archives can carry filter programs for a virtual
   machine. 67zip never executes them: it recognises WinRAR's six standard
   filters by checksum and runs its own implementation of each.
-- **Escape the worker.** Archive parsing runs in a process restricted by
-  Landlock and seccomp. Try `67z --sandbox-selftest /tmp/somedir` to see
-  the checks pass on your kernel (Landlock needs Linux 5.13 or newer).
+- **Escape the worker.** Archive parsing runs in a separate process (for
+  the app and for `67z` alike) restricted by Landlock and seccomp: it can
+  read only the archive and write only where the operation writes, has no
+  network, cannot start programs, cannot signal, debug or take file
+  descriptors from other processes, cannot create namespaces, and cannot
+  type into a terminal (`TIOCSTI`). It has no terminal at all. A new or
+  changed archive is written into a private staging folder; the
+  unsandboxed side checks the result and moves it into place, so even a
+  compromised worker cannot touch the rest of that folder. Try
+  `67z --sandbox-selftest /tmp/somedir` to see the checks pass on your
+  kernel (Landlock needs Linux 5.13 or newer).
+- **Mess with your terminal or dialogs.** Names and messages from
+  archives are shown with control and text-direction characters escaped.
+- **Leave world-writable files.** Permissions from archives are limited by
+  your umask; setuid/setgid bits are dropped.
+- **Run a launcher.** Files opened from inside an archive lose their
+  execute permission, and `.desktop` launchers are not opened.
 
 Other protections:
 
@@ -141,6 +156,16 @@ Other protections:
   over the original in one step, so a failure never leaves half an archive.
 - Release builds check every integer operation for overflow.
 - `fuzz/` holds fuzz targets for every parser, run in CI.
+
+Good to know:
+
+- Extracting writes into the folder you choose, so the worker may write
+  anywhere inside it. Prefer "Extract to *name*/" over extracting straight
+  into your home folder.
+- `67z -pSECRET` puts the password on the command line, where other users
+  of the computer can see it; use `-p` alone to be asked instead.
+- Without Landlock (Linux older than 5.13, or disabled), the sandbox only
+  blocks system calls; file access is not restricted.
 
 Limits of the formats, not of 67zip:
 
@@ -190,6 +215,6 @@ compatibility tests run against real 7-Zip as well.
 under the SIL Open Font License (`crates/zip67-gui/resources/fonts`). The
 PPMd model used for RAR is vendored from
 [ppmd-rust](https://github.com/hasenbanck/ppmd-rust) (CC0-1.0 or MIT-0), a
-port of 7-Zip's public domain code. The RAR test archives come from
-libarchive's test suite (BSD 2-clause, see
-`crates/zip67-core/tests/data/rar/README.md`).
+port of 7-Zip's public domain code. The RAR test archives come from the
+test suites of libarchive (BSD 2-clause) and rarfile (ISC), see
+`crates/zip67-core/tests/data/rar/README.md`.

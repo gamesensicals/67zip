@@ -6,9 +6,15 @@ use zip67_core::extract::{ExtractOptions, Overwrite, PathMode, Selection};
 use zip67_core::hash::HashKind;
 use zip67_core::util::{format_local_time, human_size, safe_display};
 use zip67_core::{ArchiveType, Entry, EntryKind, Error, Progress};
-use zip67_worker::protocol::{ChangesSpec, CreateSpec, Reply, Request};
-use zip67_worker::sandbox::{apply, SandboxStatus};
-use zip67_worker::server::{access_for, execute};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
+
+use zip67_core::progress::Snapshot;
+use zip67_worker::client::WorkerHandle;
+use zip67_worker::protocol::{ChangesSpec, CreateSpec, Event, FailKind, Reply, Request};
+use zip67_worker::sandbox::SandboxStatus;
+use zip67_worker::server::execute;
 
 use crate::args::{self, Args, HELP};
 use crate::term::{self, ProgressLine, TtyPrompt};
@@ -66,30 +72,33 @@ pub fn main(raw: Vec<String>) -> i32 {
     }
 }
 
-/// Runs a request in this process, sandboxed, asking for a password when
-/// needed.
+/// Runs a request in a sandboxed worker process (or here, with
+/// `--no-sandbox`), asking for a password when needed.
 fn run(a: &Args, mut make: impl FnMut(Option<String>) -> Request) -> Result<Reply, Error> {
     let mut password = match &a.password {
         Some(Some(p)) => Some(p.clone()),
         Some(None) => term::read_password("Enter password: "),
         None => None,
     };
-    let mut sandboxed = false;
+    let cancel = Arc::new(AtomicBool::new(false));
     let progress = Progress::new();
     {
-        let p = progress.clone();
-        let _ = ctrlc::set_handler(move || p.cancel());
+        let (p, c) = (progress.clone(), cancel.clone());
+        let _ = ctrlc::set_handler(move || {
+            p.cancel();
+            c.store(true, Ordering::Relaxed);
+        });
     }
     for _ in 0..3 {
         let req = make(password.clone());
-        if !sandboxed && !a.no_sandbox {
-            let status = apply(&access_for(&req));
-            report_sandbox(&status);
-            sandboxed = true;
-        }
-        let line = ProgressLine::start(&progress, !a.no_progress);
-        let res = execute(req, &progress, &mut TtyPrompt);
-        line.finish();
+        let res = if a.no_sandbox {
+            let line = ProgressLine::start(&progress, !a.no_progress);
+            let r = execute(req, &progress, &mut TtyPrompt);
+            line.finish();
+            r
+        } else {
+            in_worker(&req, a, &cancel)
+        };
         match res {
             Err(e @ (Error::PasswordRequired | Error::WrongPassword)) if term::interactive() => {
                 if matches!(e, Error::WrongPassword) {
@@ -106,6 +115,48 @@ fn run(a: &Args, mut make: impl FnMut(Option<String>) -> Request) -> Result<Repl
     Err(Error::WrongPassword)
 }
 
+/// The archive work happens in a separate `67z --worker` process that
+/// locks itself down and has no terminal; this process only shows
+/// progress, answers questions and moves finished archives into place.
+fn in_worker(req: &Request, a: &Args, cancel: &AtomicBool) -> Result<Reply, Error> {
+    let exe = std::env::current_exe().map_err(Error::Io)?;
+    let mut h = WorkerHandle::spawn(&exe, req).map_err(Error::Io)?;
+    let snap: Arc<Mutex<Snapshot>> = Arc::default();
+    let line = {
+        let s = snap.clone();
+        ProgressLine::start_with(move || s.lock().map(|x| x.clone()).unwrap_or_default(), !a.no_progress)
+    };
+    let mut cancel_sent = false;
+    let result = loop {
+        if cancel.load(Ordering::Relaxed) && !cancel_sent {
+            h.cancel();
+            cancel_sent = true;
+        }
+        match h.try_next() {
+            Some(Event::Hello { sandbox, .. }) => report_sandbox(&sandbox),
+            Some(Event::Progress(s)) => {
+                if let Ok(mut x) = snap.lock() {
+                    *x = s;
+                }
+            }
+            Some(Event::Ask(q)) => h.answer(term::ask_overwrite(&q.path, q.existing_size, q.existing_mtime, q.new_size, q.new_mtime)),
+            Some(Event::Done(r)) => break Ok(r),
+            Some(Event::Failed(f)) => {
+                break Err(match f.kind {
+                    FailKind::PasswordRequired => Error::PasswordRequired,
+                    FailKind::WrongPassword => Error::WrongPassword,
+                    FailKind::Cancelled => Error::Cancelled,
+                    _ => Error::InvalidInput(f.message),
+                });
+            }
+            None if h.is_finished() => break Err(Error::invalid("the worker process stopped unexpectedly")),
+            None => std::thread::sleep(Duration::from_millis(15)),
+        }
+    };
+    line.finish();
+    result
+}
+
 fn report_sandbox(s: &SandboxStatus) {
     if !s.is_strong() {
         eprintln!("Note: {}", s.describe());
@@ -114,7 +165,7 @@ fn report_sandbox(s: &SandboxStatus) {
 
 fn fail(e: &Error) -> i32 {
     term::clear_line();
-    eprintln!("\nERROR: {e}");
+    eprintln!("\nERROR: {}", safe_display(&e.to_string()));
     if matches!(e, Error::Cancelled) {
         EXIT_STOPPED
     } else {
@@ -259,7 +310,7 @@ fn report_extract(r: &zip67_core::extract::ExtractReport, verb: &str) -> i32 {
         eprintln!("WARNING: {}", safe_display(w));
     }
     for (p, e) in &r.errors {
-        eprintln!("ERROR: {} : {}", safe_display(p), e);
+        eprintln!("ERROR: {} : {}", safe_display(p), safe_display(e));
     }
     println!("{verb}: {} files, {} folders, {} links, {}", r.files, r.dirs, r.links, human_size(r.bytes));
     if r.skipped > 0 {
@@ -331,6 +382,9 @@ fn list(a: &Args) -> i32 {
     for w in &info.warnings {
         println!("Warning = {}", safe_display(w));
     }
+    for w in &info.problems {
+        println!("Warning = {}", safe_display(w));
+    }
     println!();
     if a.technical {
         println!("----------");
@@ -360,6 +414,9 @@ fn list(a: &Args) -> i32 {
             if let Some(l) = &e.link_target {
                 println!("Link = {}", safe_display(l));
             }
+            if let Some(c) = &e.comment {
+                println!("Comment = {}", safe_display(c));
+            }
             println!();
         }
         return 0;
@@ -377,8 +434,8 @@ fn list(a: &Args) -> i32 {
         } else {
             files += 1;
         }
-        size += e.size;
-        packed += e.packed_size.unwrap_or(0);
+        size = size.saturating_add(e.size);
+        packed = packed.saturating_add(e.packed_size.unwrap_or(0));
         newest = newest.max(e.mtime);
     }
     println!("------------------- ----- ------------ ------------  ------------------------");
@@ -444,11 +501,11 @@ fn hash(a: &Args) -> i32 {
             let mut total = 0u64;
             for r in &v {
                 if let Some(e) = &r.error {
-                    eprintln!("ERROR: {} : {e}", safe_display(&r.path.to_string_lossy()));
+                    eprintln!("ERROR: {} : {}", safe_display(&r.path.to_string_lossy()), safe_display(e));
                     bad += 1;
                     continue;
                 }
-                total += r.size;
+                total = total.saturating_add(r.size);
                 let vals: Vec<String> = r.values.iter().map(|(_, h)| h.clone()).collect();
                 println!("{}  {:>12}  {}", vals.join("  "), r.size, safe_display(&r.path.to_string_lossy()));
             }
@@ -492,7 +549,7 @@ fn info() {
         ("xz zst", "yes", "yes", "single files"),
         ("lzma lz", "yes", "yes", "single files"),
         ("iso", "yes", "no", "ISO 9660, Rock Ridge, Joliet"),
-        ("rar", "yes", "no", "RAR5 and RAR 2.9-4.x: solid, volumes, AES, self-extracting; not RAR 1.5/2.0 compression"),
+        ("rar", "yes", "no", "RAR5 and RAR 2.0-4.x: solid, volumes, AES, self-extracting; not RAR 1.5 or RAR 2.0 encryption"),
         ("split", "yes", "yes", "any format split into parts: .001, .part1.7z, .7z.part1, .z01 ... .zip, .part1.rar, .r00, .aa"),
     ];
     for (t, r, w, n) in rows {
