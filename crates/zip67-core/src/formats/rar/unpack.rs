@@ -5,6 +5,7 @@
 use std::io::{self, Read};
 
 use super::bits::Input;
+use super::unpack20::Unpack20;
 use super::unpack3::Unpack3;
 use super::unpack5::Unpack5;
 use super::window::{MARGIN, Window};
@@ -15,11 +16,20 @@ const BUDGET: u64 = 1 << 20;
 /// Smallest dictionary allocated (filters need whole blocks in memory).
 const MIN_WINDOW: u64 = 8 << 20;
 
+/// The decompression algorithm of a file.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Codec {
+    Rar5,
+    Rar29,
+    Rar20,
+}
+
 pub struct Unpacker {
     win: Option<Window>,
     v5: Option<Unpack5>,
     v3: Option<Unpack3>,
-    rar5: bool,
+    v2: Option<Unpack20>,
+    pub codec: Codec,
     max_memory: u64,
     /// A decoding error left the state undefined: nothing more is decoded
     /// until a fresh (non-solid) start.
@@ -37,13 +47,13 @@ pub fn window_size(dict: u64, stream_bytes: Option<u64>) -> u64 {
 }
 
 impl Unpacker {
-    pub fn new(rar5: bool, max_memory: u64) -> Self {
-        Unpacker { win: None, v5: None, v3: None, rar5, max_memory, failed: false }
+    pub fn new(codec: Codec, max_memory: u64) -> Self {
+        Unpacker { win: None, v5: None, v3: None, v2: None, codec, max_memory, failed: false }
     }
 
     /// Prepares for the next file. `solid` continues the previous file's
     /// stream; `window` is the dictionary size it needs.
-    pub fn begin(&mut self, solid: bool, window: u64) -> Result<()> {
+    pub fn begin(&mut self, solid: bool, window: u64, size: Option<u64>) -> Result<()> {
         if solid && self.failed {
             return Err(Error::corrupt("RAR data: an earlier file of this solid archive is damaged"));
         }
@@ -60,17 +70,23 @@ impl Unpacker {
         if let Some(w) = self.win.as_mut() {
             w.start_file(solid);
         }
-        if self.rar5 {
-            self.v5.get_or_insert_with(Unpack5::new).start_file(solid);
-        } else {
-            let mem = self.max_memory;
-            self.v3.get_or_insert_with(|| Unpack3::new(mem)).start_file(solid);
+        match self.codec {
+            Codec::Rar5 => self.v5.get_or_insert_with(Unpack5::new).start_file(solid),
+            Codec::Rar29 => {
+                let mem = self.max_memory;
+                self.v3.get_or_insert_with(|| Unpack3::new(mem)).start_file(solid);
+            }
+            Codec::Rar20 => self.v2.get_or_insert_with(Unpack20::new).start_file(solid, size),
         }
         Ok(())
     }
 
     fn finished(&self) -> bool {
-        if self.rar5 { self.v5.as_ref().is_none_or(|u| u.finished) } else { self.v3.as_ref().is_none_or(|u| u.finished) }
+        match self.codec {
+            Codec::Rar5 => self.v5.as_ref().is_none_or(|u| u.finished),
+            Codec::Rar29 => self.v3.as_ref().is_none_or(|u| u.finished),
+            Codec::Rar20 => self.v2.as_ref().is_none_or(|u| u.finished),
+        }
     }
 
     fn step(&mut self, inp: &mut Input) -> Result<()> {
@@ -86,10 +102,11 @@ impl Unpacker {
 
     fn step_inner(&mut self, inp: &mut Input) -> Result<()> {
         let win = self.win.as_mut().ok_or_else(|| Error::corrupt("RAR decoder not started"))?;
-        if self.rar5 {
-            self.v5.as_mut().ok_or_else(|| Error::corrupt("RAR decoder not started"))?.decode(inp, win, BUDGET)
-        } else {
-            self.v3.as_mut().ok_or_else(|| Error::corrupt("RAR decoder not started"))?.decode(inp, win, BUDGET)
+        let not_started = || Error::corrupt("RAR decoder not started");
+        match self.codec {
+            Codec::Rar5 => self.v5.as_mut().ok_or_else(not_started)?.decode(inp, win, BUDGET),
+            Codec::Rar29 => self.v3.as_mut().ok_or_else(not_started)?.decode(inp, win, BUDGET),
+            Codec::Rar20 => self.v2.as_mut().ok_or_else(not_started)?.decode(inp, win, BUDGET),
         }
     }
 }
@@ -143,7 +160,7 @@ impl<'a> FileDecoder<'a> {
             if n == 0 {
                 return Ok(());
             }
-            if self.up.rar5 {
+            if self.up.codec == Codec::Rar5 {
                 return Err(Error::corrupt("entry is larger than its declared size"));
             }
             extra += n as u64;

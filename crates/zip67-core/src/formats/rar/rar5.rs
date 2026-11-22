@@ -383,6 +383,10 @@ fn extra_record(rec: &mut FileRec, kind: u64, f: &mut Rd) -> Result<()> {
                     rec.mtime = Some(if unix { (m as i64, ns.unwrap_or(0).min(999_999_999)) } else { crate::util::filetime_to_unix(m) });
                 }
             }
+            4 => {
+                let _flags = f.vint()?;
+                rec.file_version = Some(f.vint()?);
+            }
             5 => {
                 let t = f.vint()?;
                 let _flags = f.vint()?;

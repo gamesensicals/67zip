@@ -15,6 +15,7 @@ mod rar4;
 mod rar5;
 mod reader;
 mod unpack;
+mod unpack20;
 mod unpack3;
 mod unpack5;
 mod window;
@@ -33,9 +34,12 @@ pub fn is_rar(head: &[u8]) -> bool {
     head.starts_with(b"Rar!\x1a\x07")
 }
 
-/// Offset of a RAR signature inside a self-extracting program.
-pub fn find_sfx_signature(head: &[u8]) -> Option<usize> {
-    if !(head.starts_with(b"MZ") || head.starts_with(b"\x7fELF")) {
+/// Offset of a RAR signature inside a self-extracting program (a Windows
+/// or Linux executable, or a file named `.exe` / `.sfx`).
+pub fn find_sfx_signature(head: &[u8], name: &str) -> Option<usize> {
+    let lower = name.to_ascii_lowercase();
+    let program = head.starts_with(b"MZ") || head.starts_with(b"\x7fELF") || lower.ends_with(".exe") || lower.ends_with(".sfx");
+    if !program {
         return None;
     }
     head.windows(8).position(|w| w == rar5::SIGNATURE || &w[..7] == rar4::SIGNATURE)
@@ -92,6 +96,8 @@ pub(crate) struct FileRec {
     pub link: Link,
     pub split_before: bool,
     pub split_after: bool,
+    /// Older version of a file (archived with WinRAR's `-ver`).
+    pub file_version: Option<u64>,
     pub data_offset: u64,
     pub data_len: u64,
     /// The volume ends inside this file's data.

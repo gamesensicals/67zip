@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex};
 
 use super::blake2sp::Blake2sp;
 use super::crypto::{self, Keys5};
-use super::unpack::{FileDecoder, Unpacker, window_size};
+use super::unpack::{Codec, FileDecoder, Unpacker, window_size};
 use super::{Crypt, FileRec, KeyCache, Link, Version, VolumeHeaders, rar4, rar5};
 use crate::archive::{ArchiveInfo, ArchiveReader, EntryVisitor, OpenOptions};
 use crate::cipher::{AesKey, CbcDecryptReader};
@@ -45,7 +45,6 @@ pub struct RarReader {
     groups: Vec<Option<usize>>,
     /// Dictionary to allocate for each solid stream.
     group_window: HashMap<usize, u64>,
-    rar5: bool,
     password: Option<Password>,
     limits: Limits,
     keys: KeyCache,
@@ -173,6 +172,18 @@ fn clone_err(e: &Error) -> Error {
     }
 }
 
+/// The decompressor for a compressed item.
+fn codec_of(r: &FileRec) -> Result<Codec> {
+    match r.version {
+        Version::V5 { alg: 0 } => Ok(Codec::Rar5),
+        Version::V5 { .. } => Err(Error::unsupported("RAR 7 compression for dictionaries over 4 GB")),
+        Version::V3 { unp_ver: 29 | 36 } => Ok(Codec::Rar29),
+        Version::V3 { unp_ver: 20 | 26 } => Ok(Codec::Rar20),
+        Version::V3 { unp_ver } if unp_ver < 20 => Err(Error::unsupported("RAR 1.5 compression (archives made before 1997)")),
+        Version::V3 { unp_ver } => Err(Error::unsupported(format!("RAR compression version {}.{}", unp_ver / 10, unp_ver % 10))),
+    }
+}
+
 fn has_stream(r: &FileRec) -> bool {
     !r.dir && !matches!(r.link, Link::Symlink(_) | Link::Hardlink(_) | Link::Copy(_))
 }
@@ -202,9 +213,7 @@ fn locate(src: &mut dyn ReadSeek, size: u64) -> Result<Vec<(u64, bool)>> {
     if let Some(is5) = kind(0) {
         return Ok(vec![(0, is5)]);
     }
-    if super::find_sfx_signature(&head).is_none() {
-        return Ok(Vec::new());
-    }
+
     let mut found = Vec::new();
     for (p, w) in head.windows(6).enumerate() {
         if w == b"Rar!\x1a\x07"
@@ -385,18 +394,22 @@ impl RarReader {
                 };
             }
             let ftype = if r.unix { r.attr & 0o170000 } else { 0 };
-            let kind = if r.dir {
-                EntryKind::Dir
-            } else {
-                match r.link {
-                    Link::Symlink(_) | Link::InData => EntryKind::Symlink,
-                    Link::Hardlink(_) => EntryKind::Hardlink,
-                    Link::Copy(_) => EntryKind::File,
-                    Link::None if matches!(ftype, 0o010000 | 0o020000 | 0o060000 | 0o140000) => EntryKind::Special,
-                    Link::None => EntryKind::File,
-                }
+            // A link to a directory has the directory flag too.
+            let kind = match r.link {
+                Link::Symlink(_) | Link::InData => EntryKind::Symlink,
+                Link::Hardlink(_) => EntryKind::Hardlink,
+                Link::Copy(_) => EntryKind::File,
+                Link::None if r.dir => EntryKind::Dir,
+                Link::None if matches!(ftype, 0o010000 | 0o020000 | 0o060000 | 0o140000) => EntryKind::Special,
+                Link::None => EntryKind::File,
             };
-            let (path, unsafe_path) = normalize_path(&r.name);
+            // Older versions get WinRAR's `name;N`, so they do not collide
+            // with the current file.
+            let name = match r.file_version {
+                Some(v) => format!("{};{v}", r.name),
+                None => r.name.clone(),
+            };
+            let (path, unsafe_path) = normalize_path(&name);
             let mut e = Entry::new(i, path, kind);
             e.unsafe_path = unsafe_path;
             e.size = if has_stream(r) || matches!(r.link, Link::Copy(_)) { r.size } else { 0 };
@@ -441,7 +454,7 @@ impl RarReader {
         let group_window = group_dict.into_iter().map(|(g, (d, total))| (g, window_size(d, total))).collect();
 
         let mut reader =
-            RarReader { vols, items, entries, groups, group_window, rar5, password: opts.password.clone(), limits: opts.limits.clone(), keys, info };
+            RarReader { vols, items, entries, groups, group_window, password: opts.password.clone(), limits: opts.limits.clone(), keys, info };
         if let Some((_, rec)) = comment
             && let Ok(bytes) = reader.read_comment(rec)
         {
@@ -464,8 +477,8 @@ impl RarReader {
         if item.rec.method == 0 {
             TakeExact::new(stream, item.rec.size).read_to_end(&mut out)?;
         } else {
-            let mut up = Unpacker::new(self.rar5, self.limits.max_decoder_memory);
-            up.begin(false, window_size(item.rec.dict, Some(item.rec.size)))?;
+            let mut up = Unpacker::new(codec_of(&item.rec)?, self.limits.max_decoder_memory);
+            up.begin(false, window_size(item.rec.dict, Some(item.rec.size)), Some(item.rec.size))?;
             FileDecoder::new(&mut up, stream, Some(item.rec.size)).read_to_end(&mut out)?;
         }
         Ok(out)
@@ -543,13 +556,7 @@ impl RarReader {
                 Err(e) => Ok(Done::Entry(e)),
             };
         }
-        match rec.version {
-            Version::V3 { unp_ver } if unp_ver < 29 && rec.method != 0 => {
-                return Err(Error::unsupported("RAR 1.5 / 2.0 compression (archives made before 2000)"));
-            }
-            Version::V5 { alg } if alg != 0 => return Err(Error::unsupported("RAR 7 compression for dictionaries over 4 GB")),
-            _ => {}
-        }
+        let codec = if rec.method == 0 { None } else { Some(codec_of(rec)?) };
         if rec.size_known && rec.size > self.limits.max_total_size {
             return Err(Error::limit("file is larger than the size limit"));
         }
@@ -575,8 +582,15 @@ impl RarReader {
             }
             Box::new(io::empty())
         } else {
-            let u = up.get_or_insert_with(|| Unpacker::new(self.rar5, self.limits.max_decoder_memory));
-            u.begin(solid_continue, window)?;
+            let codec = codec.ok_or_else(|| Error::corrupt("RAR: no codec"))?;
+            if up.as_ref().is_some_and(|u| u.codec != codec) {
+                if solid_continue {
+                    return Err(Error::corrupt("RAR: a solid stream changes its compression version"));
+                }
+                *up = None;
+            }
+            let u = up.get_or_insert_with(|| Unpacker::new(codec, self.limits.max_decoder_memory));
+            u.begin(solid_continue, window, expected)?;
             decoder_holder = FileDecoder::new(u, stream, expected);
             Box::new(&mut decoder_holder)
         };
@@ -696,7 +710,7 @@ impl ArchiveReader for RarReader {
             }
             progress.check()?;
             let rec = &self.items[i].rec;
-            if rec.dir {
+            if rec.dir && matches!(rec.link, Link::None) {
                 visitor.dir(&self.entries[i])?;
                 progress.file_done();
                 continue;

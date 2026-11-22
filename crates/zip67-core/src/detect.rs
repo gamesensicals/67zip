@@ -269,7 +269,9 @@ pub fn detect(src: &mut dyn ReadSeek, name: &str, limits: &Limits) -> Result<Arc
         return Ok(ArchiveType::new(if inner { Container::Tar } else { Container::Raw }, Compression::Lzma));
     }
     // Self-extracting RAR archives.
-    if crate::formats::rar::find_sfx_signature(&head).is_some() || (head.starts_with(b"MZ") && sfx_rar(src)?) {
+    let lower = name.to_ascii_lowercase();
+    let program = head.starts_with(b"MZ") || head.starts_with(b"\x7fELF") || lower.ends_with(".exe") || lower.ends_with(".sfx");
+    if crate::formats::rar::find_sfx_signature(&head, name).is_some() || (program && sfx_rar(src, name)?) {
         return Ok(ArchiveType::RAR);
     }
     // Self-extracting or prefixed zip files: look for the end record.
@@ -286,12 +288,12 @@ pub fn detect(src: &mut dyn ReadSeek, name: &str, limits: &Limits) -> Result<Arc
 }
 
 /// Looks for a RAR signature in the first 4 MiB of a program.
-fn sfx_rar(src: &mut dyn ReadSeek) -> Result<bool> {
+fn sfx_rar(src: &mut dyn ReadSeek, name: &str) -> Result<bool> {
     src.seek(SeekFrom::Start(0))?;
     let mut head = vec![0u8; 4 << 20];
     let n = crate::io::read_full(src, &mut head)?;
     head.truncate(n);
-    Ok(crate::formats::rar::find_sfx_signature(&head).is_some())
+    Ok(crate::formats::rar::find_sfx_signature(&head, name).is_some())
 }
 
 fn peek_decoded_tar(src: &mut dyn ReadSeek, c: Compression, limits: &Limits) -> bool {

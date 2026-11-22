@@ -158,6 +158,11 @@ impl Input {
         self.eof && (self.pos > self.len || (self.pos == self.len && self.bit > 0))
     }
 
+    /// Bytes buffered after the read position.
+    pub fn available(&self) -> usize {
+        self.len.saturating_sub(self.pos)
+    }
+
     /// An I/O error from the underlying reader, if one happened.
     pub fn take_error(&mut self) -> Option<io::Error> {
         self.err.take()
