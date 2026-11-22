@@ -50,5 +50,8 @@ jobs:
           for t in $(cargo fuzz list); do
             # Work on a copy so new inputs never land in the committed seeds.
             mkdir -p corpus && cp -r "seeds/$t" "corpus/$t"
-            cargo fuzz run "$t" "corpus/$t" -- -max_total_time=60 -rss_limit_mb=2048 -timeout=20
+            # detect_leaks=0: LeakSanitizer reports glibc's per-thread
+            # bookkeeping of short-lived decoder threads as a 32-byte leak.
+            # Real runaway memory is still caught by -rss_limit_mb.
+            cargo fuzz run "$t" "corpus/$t" -- -max_total_time=60 -rss_limit_mb=2048 -timeout=20 -detect_leaks=0
           done

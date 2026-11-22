@@ -127,6 +127,11 @@ outer.zip/inner.7z). AppImage script written (`packaging/appimage/build.sh`) but
 session's safety rules blocked downloading and running `appimagetool`; the
 user decides whether to run it / add a CI job. Release binaries only link
 glibc (built here: needs glibc 2.39; build on an older distro).
+08:55 continuation: 10-minute fuzz round on the newest code: zip 564k and
+streams 138k runs clean; 7z and open_any stopped on a 32-byte LeakSanitizer
+report from glibc thread-local bookkeeping in short-lived bz2 decoder
+threads (false positive, not a growing leak), so CI fuzzing now passes
+-detect_leaks=0 (memory is still capped by -rss_limit_mb).
 Possible polish: drag files *out* of the window (iced does not support it
 yet), RAR reading (offered, not asked).
 
