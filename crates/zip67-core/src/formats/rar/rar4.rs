@@ -23,7 +23,9 @@ fn bad(msg: &str) -> Error {
 fn decode_unicode(plain: &[u8], enc: &[u8]) -> String {
     let mut out: Vec<u16> = Vec::with_capacity(plain.len());
     let mut p = 0usize;
-    let Some(&high) = enc.first() else { return String::from_utf8_lossy(plain).into_owned() };
+    let Some(&high) = enc.first() else {
+        return String::from_utf8_lossy(plain).into_owned();
+    };
     p += 1;
     let high = u16::from(high);
     let mut flags = 0u8;
@@ -96,7 +98,9 @@ pub(crate) fn read_volume(
         }
         src.seek(SeekFrom::Start(pos))?;
         let (raw, used) = if encrypted {
-            let Some(pw) = password else { return Err(Error::PasswordRequired) };
+            let Some(pw) = password else {
+                return Err(Error::PasswordRequired);
+            };
             match read_encrypted(src, size - pos, pw, keys) {
                 Ok(v) => v,
                 // Nothing decrypted sensibly yet: RAR 4 has no password check
@@ -155,19 +159,25 @@ pub(crate) fn read_volume(
                 let parsed = parse_file(&raw, flags);
                 // RAR 2.x file comments follow the fields the CRC covers.
                 let crc_ok = crc_ok
-                    || flags & 0x0008 != 0 && parsed.as_ref().is_ok_and(|(_, used)| crate::crc::crc32(&raw[2..*used]) as u16 == crc);
+                    || flags & 0x0008 != 0
+                        && parsed
+                            .as_ref()
+                            .is_ok_and(|(_, used)| crate::crc::crc32(&raw[2..*used]) as u16 == crc);
                 if !crc_ok {
                     if encrypted && vh.files.is_empty() {
                         return Err(Error::WrongPassword);
                     }
-                    vh.warnings.push("a RAR file header is damaged; the files after it were not read".into());
+                    vh.warnings.push(
+                        "a RAR file header is damaged; the files after it were not read".into(),
+                    );
                     vh.truncated = true;
                     break;
                 }
                 let mut rec = match parsed {
                     Ok((r, _)) => r,
                     Err(e) => {
-                        vh.warnings.push(format!("{e}; the files after it were not read"));
+                        vh.warnings
+                            .push(format!("{e}; the files after it were not read"));
                         vh.truncated = true;
                         break;
                     }
@@ -218,7 +228,8 @@ pub(crate) fn read_volume(
 /// The whole header block (from the CRC field) and the bytes it occupies.
 fn read_plain(src: &mut dyn ReadSeek, left: u64) -> Result<(Vec<u8>, u64)> {
     let mut base = [0u8; 7];
-    src.read_exact(&mut base).map_err(|_| bad("archive ends inside a header (incomplete download?)"))?;
+    src.read_exact(&mut base)
+        .map_err(|_| bad("archive ends inside a header (incomplete download?)"))?;
     let hsize = u64::from(u16::from_le_bytes([base[5], base[6]]));
     if hsize < 7 {
         return Err(bad("bad header size"));
@@ -234,7 +245,12 @@ fn read_plain(src: &mut dyn ReadSeek, left: u64) -> Result<(Vec<u8>, u64)> {
 
 /// Encrypted headers: an 8-byte salt, then the header in AES-128-CBC,
 /// padded to 16 bytes.
-fn read_encrypted(src: &mut dyn ReadSeek, left: u64, pw: &Password, keys: &mut super::KeyCache) -> Result<(Vec<u8>, u64)> {
+fn read_encrypted(
+    src: &mut dyn ReadSeek,
+    left: u64,
+    pw: &Password,
+    keys: &mut super::KeyCache,
+) -> Result<(Vec<u8>, u64)> {
     if left < 8 + 16 {
         return Err(bad("archive ends inside a header (incomplete download?)"));
     }
@@ -287,7 +303,11 @@ fn old_comment(b: &[u8]) -> Option<String> {
         up.begin(false, 1 << 20, Some(unp as u64)).ok()?;
         let mut out = Vec::new();
         let src: Box<dyn std::io::Read + Send> = Box::new(std::io::Cursor::new(data.to_vec()));
-        std::io::Read::read_to_end(&mut super::unpack::FileDecoder::new(&mut up, src, Some(unp as u64)), &mut out).ok()?;
+        std::io::Read::read_to_end(
+            &mut super::unpack::FileDecoder::new(&mut up, src, Some(unp as u64)),
+            &mut out,
+        )
+        .ok()?;
         out
     };
     super::comment_text(&bytes)
@@ -310,7 +330,10 @@ fn parse_file(raw: &[u8], flags: u16) -> Result<(FileRec, usize)> {
     let (unp_size, known) = if flags & 0x0100 != 0 {
         let _pack_hi = b.u32()?;
         let hi = b.u32()?;
-        (u64::from(hi) << 32 | u64::from(unp_lo), !(unp_lo == u32::MAX && hi == u32::MAX))
+        (
+            u64::from(hi) << 32 | u64::from(unp_lo),
+            !(unp_lo == u32::MAX && hi == u32::MAX),
+        )
     } else {
         (u64::from(unp_lo), unp_lo != u32::MAX)
     };
@@ -361,15 +384,33 @@ fn parse_file(raw: &[u8], flags: u16) -> Result<(FileRec, usize)> {
         }
     }
     let unix = host == 3 || host == 5;
-    let dir = flags & 0x00e0 == 0x00e0 || (!unix && attr & 0x10 != 0) || (unix && attr & 0o170000 == 0o040000);
+    let dir = flags & 0x00e0 == 0x00e0
+        || (!unix && attr & 0x10 != 0)
+        || (unix && attr & 0o170000 == 0o040000);
     let crypt = if flags & 0x0004 != 0 {
-        Some(if unp_ver >= 29 { Crypt::V3 { salt } } else { Crypt::Unknown(format!("encryption of RAR {}.{} archives", unp_ver / 10, unp_ver % 10)) })
+        Some(if unp_ver >= 29 {
+            Crypt::V3 { salt }
+        } else {
+            Crypt::Unknown(format!(
+                "encryption of RAR {}.{} archives",
+                unp_ver / 10,
+                unp_ver % 10
+            ))
+        })
     } else {
         None
     };
-    let link = if unix && attr & 0o170000 == 0o120000 { Link::InData } else { Link::None };
+    let link = if unix && attr & 0o170000 == 0o120000 {
+        Link::InData
+    } else {
+        Link::None
+    };
     let used = 7 + b.pos();
-    let comment = if flags & 0x0008 != 0 { old_comment(&raw[used..]) } else { None };
+    let comment = if flags & 0x0008 != 0 {
+        old_comment(&raw[used..])
+    } else {
+        None
+    };
     let rec = FileRec {
         name,
         dir,
@@ -380,7 +421,11 @@ fn parse_file(raw: &[u8], flags: u16) -> Result<(FileRec, usize)> {
         unix,
         crc: Some(crc),
         method: method.wrapping_sub(0x30),
-        dict: if dir { 0 } else { (64u64 << 10) << ((flags >> 5) & 7) },
+        dict: if dir {
+            0
+        } else {
+            (64u64 << 10) << ((flags >> 5) & 7)
+        },
         version: Version::V3 { unp_ver },
         solid: flags & 0x0010 != 0,
         crypt,

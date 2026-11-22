@@ -6,9 +6,13 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use landlock::{
-    path_beneath_rules, Access, AccessFs, AccessNet, CompatLevel, Compatible, Ruleset, RulesetAttr, RulesetCreatedAttr, RulesetStatus, Scope, ABI,
+    ABI, Access, AccessFs, AccessNet, CompatLevel, Compatible, Ruleset, RulesetAttr,
+    RulesetCreatedAttr, RulesetStatus, Scope, path_beneath_rules,
 };
-use seccompiler::{sock_filter, BpfProgram, SeccompAction, SeccompCmpArgLen, SeccompCmpOp, SeccompCondition, SeccompFilter, SeccompRule, TargetArch};
+use seccompiler::{
+    BpfProgram, SeccompAction, SeccompCmpArgLen, SeccompCmpOp, SeccompCondition, SeccompFilter,
+    SeccompRule, TargetArch, sock_filter,
+};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -52,7 +56,12 @@ fn landlock(access: &Access2) -> Result<(RulesetStatus, bool), landlock::Ruleset
             read.push(p);
         }
     }
-    let write: Vec<PathBuf> = access.write.iter().filter(|p| p.exists()).cloned().collect();
+    let write: Vec<PathBuf> = access
+        .write
+        .iter()
+        .filter(|p| p.exists())
+        .cloned()
+        .collect();
     let status = Ruleset::default()
         .set_compatibility(CompatLevel::BestEffort)
         .handle_access(AccessFs::from_all(abi))?
@@ -126,7 +135,13 @@ fn blocked_syscalls() -> Vec<i64> {
         libc::SYS_mknodat,
     ];
     #[cfg(target_arch = "x86_64")]
-    v.extend([libc::SYS_iopl, libc::SYS_ioperm, libc::SYS_kexec_file_load, libc::SYS_mknod, libc::SYS_uselib]);
+    v.extend([
+        libc::SYS_iopl,
+        libc::SYS_ioperm,
+        libc::SYS_kexec_file_load,
+        libc::SYS_mknod,
+        libc::SYS_uselib,
+    ]);
     v
 }
 
@@ -154,13 +169,41 @@ fn conditional_rules() -> Option<Vec<(i64, Vec<SeccompRule>)>> {
     // would let a compromised process run commands in the user's shell.
     // The kernel reads the request as 32 bits, so only those are compared.
     let ioctl = vec![
-        SeccompRule::new(vec![cond(1, SeccompCmpArgLen::Dword, SeccompCmpOp::Eq, libc::TIOCSTI as u64)?]).ok()?,
-        SeccompRule::new(vec![cond(1, SeccompCmpArgLen::Dword, SeccompCmpOp::Eq, libc::TIOCLINUX as u64)?]).ok()?,
+        SeccompRule::new(vec![cond(
+            1,
+            SeccompCmpArgLen::Dword,
+            SeccompCmpOp::Eq,
+            libc::TIOCSTI as u64,
+        )?])
+        .ok()?,
+        SeccompRule::new(vec![cond(
+            1,
+            SeccompCmpArgLen::Dword,
+            SeccompCmpOp::Eq,
+            libc::TIOCLINUX as u64,
+        )?])
+        .ok()?,
     ];
     // Signals only to this process (kill(-1) would hit every process of
     // the user on kernels without Landlock signal scoping).
-    let kill = vec![SeccompRule::new(vec![cond(0, SeccompCmpArgLen::Dword, SeccompCmpOp::Ne, pid)?]).ok()?];
-    let tgkill = vec![SeccompRule::new(vec![cond(0, SeccompCmpArgLen::Dword, SeccompCmpOp::Ne, pid)?]).ok()?];
+    let kill = vec![
+        SeccompRule::new(vec![cond(
+            0,
+            SeccompCmpArgLen::Dword,
+            SeccompCmpOp::Ne,
+            pid,
+        )?])
+        .ok()?,
+    ];
+    let tgkill = vec![
+        SeccompRule::new(vec![cond(
+            0,
+            SeccompCmpArgLen::Dword,
+            SeccompCmpOp::Ne,
+            pid,
+        )?])
+        .ok()?,
+    ];
     // Threads are fine; new namespaces are not.
     let ns = [
         libc::CLONE_NEWUSER,
@@ -174,13 +217,36 @@ fn conditional_rules() -> Option<Vec<(i64, Vec<SeccompRule>)>> {
     let mut clone = Vec::new();
     for f in ns {
         let f = f as u64;
-        clone.push(SeccompRule::new(vec![cond(0, SeccompCmpArgLen::Qword, SeccompCmpOp::MaskedEq(f), f)?]).ok()?);
+        clone.push(
+            SeccompRule::new(vec![cond(
+                0,
+                SeccompCmpArgLen::Qword,
+                SeccompCmpOp::MaskedEq(f),
+                f,
+            )?])
+            .ok()?,
+        );
     }
-    Some(vec![(libc::SYS_ioctl, ioctl), (libc::SYS_kill, kill), (libc::SYS_tgkill, tgkill), (libc::SYS_clone, clone)])
+    Some(vec![
+        (libc::SYS_ioctl, ioctl),
+        (libc::SYS_kill, kill),
+        (libc::SYS_tgkill, tgkill),
+        (libc::SYS_clone, clone),
+    ])
 }
 
-fn compile(rules: BTreeMap<i64, Vec<SeccompRule>>, errno: i32, arch: TargetArch) -> Option<BpfProgram> {
-    let filter = SeccompFilter::new(rules, SeccompAction::Allow, SeccompAction::Errno(errno as u32), arch).ok()?;
+fn compile(
+    rules: BTreeMap<i64, Vec<SeccompRule>>,
+    errno: i32,
+    arch: TargetArch,
+) -> Option<BpfProgram> {
+    let filter = SeccompFilter::new(
+        rules,
+        SeccompAction::Allow,
+        SeccompAction::Errno(errno as u32),
+        arch,
+    )
+    .ok()?;
     filter.try_into().ok()
 }
 
@@ -194,9 +260,24 @@ fn reject_x32(prog: &mut BpfProgram) {
         const JGE_K: u16 = 0x35;
         const RET_K: u16 = 0x06;
         let insns = [
-            sock_filter { code: LD_W_ABS, jt: 0, jf: 0, k: 0 },
-            sock_filter { code: JGE_K, jt: 0, jf: 1, k: 0x4000_0000 },
-            sock_filter { code: RET_K, jt: 0, jf: 0, k: libc::SECCOMP_RET_ERRNO | libc::EPERM as u32 },
+            sock_filter {
+                code: LD_W_ABS,
+                jt: 0,
+                jf: 0,
+                k: 0,
+            },
+            sock_filter {
+                code: JGE_K,
+                jt: 0,
+                jf: 1,
+                k: 0x4000_0000,
+            },
+            sock_filter {
+                code: RET_K,
+                jt: 0,
+                jf: 0,
+                k: libc::SECCOMP_RET_ERRNO | libc::EPERM as u32,
+            },
         ];
         for (i, ins) in insns.into_iter().enumerate() {
             prog.insert(3 + i, ins);
@@ -205,15 +286,30 @@ fn reject_x32(prog: &mut BpfProgram) {
 }
 
 fn seccomp() -> bool {
-    let Some(arch) = target_arch() else { return false };
-    let Some(cond) = conditional_rules() else { return false };
-    let mut rules: BTreeMap<i64, Vec<SeccompRule>> = blocked_syscalls().into_iter().map(|s| (s, vec![])).collect();
+    let Some(arch) = target_arch() else {
+        return false;
+    };
+    let Some(cond) = conditional_rules() else {
+        return false;
+    };
+    let mut rules: BTreeMap<i64, Vec<SeccompRule>> = blocked_syscalls()
+        .into_iter()
+        .map(|s| (s, vec![]))
+        .collect();
     rules.extend(cond);
-    let Some(mut prog) = compile(rules, libc::EPERM, arch) else { return false };
+    let Some(mut prog) = compile(rules, libc::EPERM, arch) else {
+        return false;
+    };
     reject_x32(&mut prog);
     // clone3 hides its flags in memory a filter cannot read: report it as
     // missing, so the C library falls back to clone, which is checked.
-    let Some(clone3) = compile([(libc::SYS_clone3, vec![])].into_iter().collect(), libc::ENOSYS, arch) else { return false };
+    let Some(clone3) = compile(
+        [(libc::SYS_clone3, vec![])].into_iter().collect(),
+        libc::ENOSYS,
+        arch,
+    ) else {
+        return false;
+    };
     seccompiler::apply_filter(&prog).is_ok() && seccompiler::apply_filter(&clone3).is_ok()
 }
 
@@ -228,7 +324,11 @@ pub fn apply(access: &Access2) -> SandboxStatus {
         Err(_) => ("unavailable", false),
     };
     let seccomp = seccomp();
-    SandboxStatus { landlock: landlock.into(), seccomp, no_new_privs: nnp }
+    SandboxStatus {
+        landlock: landlock.into(),
+        seccomp,
+        no_new_privs: nnp,
+    }
 }
 
 fn jiff_warmup() -> Option<()> {
@@ -240,28 +340,52 @@ fn jiff_warmup() -> Option<()> {
 /// Returns (check, passed). Used by `67z --sandbox-selftest`; it locks down
 /// the calling process for good, so run it in a throw-away process.
 pub fn selftest(allowed: &std::path::Path) -> (SandboxStatus, Vec<(String, bool)>) {
-    let status = apply(&Access2 { read: vec![], write: vec![allowed.to_path_buf()] });
+    let status = apply(&Access2 {
+        read: vec![],
+        write: vec![allowed.to_path_buf()],
+    });
     let mut checks = Vec::new();
     let landlock_on = status.landlock != "unavailable";
     let inside = allowed.join("selftest-ok.txt");
-    checks.push(("write inside the allowed folder works".into(), std::fs::write(&inside, b"ok").is_ok()));
+    checks.push((
+        "write inside the allowed folder works".into(),
+        std::fs::write(&inside, b"ok").is_ok(),
+    ));
     let _ = std::fs::remove_file(&inside);
     if landlock_on {
-        checks.push(("reading /etc/passwd is blocked".into(), std::fs::read("/etc/passwd").is_err()));
-        let base = allowed.canonicalize().ok().and_then(|p| p.parent().map(std::path::Path::to_path_buf)).unwrap_or_else(std::env::temp_dir);
+        checks.push((
+            "reading /etc/passwd is blocked".into(),
+            std::fs::read("/etc/passwd").is_err(),
+        ));
+        let base = allowed
+            .canonicalize()
+            .ok()
+            .and_then(|p| p.parent().map(std::path::Path::to_path_buf))
+            .unwrap_or_else(std::env::temp_dir);
         let outside = base.join(format!("67zip-selftest-{}", std::process::id()));
         let blocked = std::fs::write(&outside, b"x").is_err();
         let _ = std::fs::remove_file(&outside);
-        checks.push(("writing outside the allowed folder is blocked".into(), blocked));
+        checks.push((
+            "writing outside the allowed folder is blocked".into(),
+            blocked,
+        ));
     }
     if status.seccomp {
         let net = std::net::TcpStream::connect(("127.0.0.1", 9));
-        checks.push(("opening a network connection is blocked".into(), net.as_ref().err().is_some_and(|e| e.kind() == std::io::ErrorKind::PermissionDenied)));
+        checks.push((
+            "opening a network connection is blocked".into(),
+            net.as_ref()
+                .err()
+                .is_some_and(|e| e.kind() == std::io::ErrorKind::PermissionDenied),
+        ));
         let exec = std::process::Command::new("/bin/true").status();
         checks.push(("starting another program is blocked".into(), exec.is_err()));
         // Signal probes (signal 0 only checks permission, it sends nothing).
         let parent = rustix::process::getppid().map(rustix::process::test_kill_process);
-        checks.push(("signalling the parent process is blocked".into(), parent.is_none_or(|r| r.is_err())));
+        checks.push((
+            "signalling the parent process is blocked".into(),
+            parent.is_none_or(|r| r.is_err()),
+        ));
         let me = rustix::process::test_kill_process(rustix::process::getpid());
         checks.push(("signalling itself still works".into(), me.is_ok()));
     }

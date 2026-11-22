@@ -69,7 +69,9 @@ impl Folder {
         (0..self.total_out()).find(|o| !self.bind_pairs.iter().any(|&(_, out)| out == *o))
     }
     pub fn unpack_size(&self) -> u64 {
-        self.main_out().and_then(|o| self.unpack_sizes.get(o).copied()).unwrap_or(0)
+        self.main_out()
+            .and_then(|o| self.unpack_sizes.get(o).copied())
+            .unwrap_or(0)
     }
     /// (coder index, first in index, first out index) owning out stream `o`.
     pub fn coder_of_out(&self, o: usize) -> Option<(usize, usize, usize)> {
@@ -163,7 +165,9 @@ fn count(b: &mut Bytes, what: &str, max: u64) -> Result<usize> {
 
 fn bool_vector(b: &mut Bytes, n: usize) -> Result<Vec<bool>> {
     let bytes = b.take(n.div_ceil(8))?;
-    Ok((0..n).map(|i| bytes[i / 8] & (0x80 >> (i % 8)) != 0).collect())
+    Ok((0..n)
+        .map(|i| bytes[i / 8] & (0x80 >> (i % 8)) != 0)
+        .collect())
 }
 
 fn defined_vector(b: &mut Bytes, n: usize) -> Result<Vec<bool>> {
@@ -177,13 +181,18 @@ fn defined_vector(b: &mut Bytes, n: usize) -> Result<Vec<bool>> {
 
 fn digests(b: &mut Bytes, n: usize) -> Result<Vec<Option<u32>>> {
     let defined = defined_vector(b, n)?;
-    defined.into_iter().map(|d| if d { b.u32().map(Some) } else { Ok(None) }).collect()
+    defined
+        .into_iter()
+        .map(|d| if d { b.u32().map(Some) } else { Ok(None) })
+        .collect()
 }
 
 fn expect(b: &mut Bytes, want: u8) -> Result<()> {
     let got = b.u8()?;
     if got != want {
-        return Err(Error::corrupt(format!("7z header: expected property {want:#x}, found {got:#x}")));
+        return Err(Error::corrupt(format!(
+            "7z header: expected property {want:#x}, found {got:#x}"
+        )));
     }
     Ok(())
 }
@@ -200,16 +209,28 @@ fn read_folder(b: &mut Bytes) -> Result<Folder> {
             return Err(Error::unsupported("7z alternative coder methods"));
         }
         let id = b.take((flags & 0x0f) as usize)?.to_vec();
-        let (num_in, num_out) = if flags & 0x10 != 0 { (count(b, "streams", 64)?, count(b, "streams", 64)?) } else { (1, 1) };
+        let (num_in, num_out) = if flags & 0x10 != 0 {
+            (count(b, "streams", 64)?, count(b, "streams", 64)?)
+        } else {
+            (1, 1)
+        };
         let props = if flags & 0x20 != 0 {
             let n = count(b, "property bytes", b.remaining() as u64)?;
             b.take(n)?.to_vec()
         } else {
             Vec::new()
         };
-        coders.push(Coder { id, num_in, num_out, props });
+        coders.push(Coder {
+            id,
+            num_in,
+            num_out,
+            props,
+        });
     }
-    let mut f = Folder { coders, ..Default::default() };
+    let mut f = Folder {
+        coders,
+        ..Default::default()
+    };
     let total_out = f.total_out();
     let total_in = f.total_in();
     if total_out == 0 {
@@ -220,9 +241,13 @@ fn read_folder(b: &mut Bytes) -> Result<Folder> {
         let o = count(b, "streams", total_out as u64)?;
         f.bind_pairs.push((i, o));
     }
-    let num_packed = total_in.checked_sub(f.bind_pairs.len()).ok_or_else(|| Error::corrupt("7z folder bind pairs"))?;
+    let num_packed = total_in
+        .checked_sub(f.bind_pairs.len())
+        .ok_or_else(|| Error::corrupt("7z folder bind pairs"))?;
     if num_packed == 1 {
-        let free = (0..total_in).find(|i| !f.bind_pairs.iter().any(|&(bi, _)| bi == *i)).ok_or_else(|| Error::corrupt("7z folder streams"))?;
+        let free = (0..total_in)
+            .find(|i| !f.bind_pairs.iter().any(|&(bi, _)| bi == *i))
+            .ok_or_else(|| Error::corrupt("7z folder streams"))?;
         f.packed.push(free);
     } else {
         for _ in 0..num_packed {
@@ -272,7 +297,9 @@ fn read_streams_info(b: &mut Bytes) -> Result<StreamsInfo> {
                 }
                 expect(b, id::CODERS_UNPACK_SIZE)?;
                 for f in &mut s.folders {
-                    f.unpack_sizes = (0..f.total_out()).map(|_| read_number(b)).collect::<Result<_>>()?;
+                    f.unpack_sizes = (0..f.total_out())
+                        .map(|_| read_number(b))
+                        .collect::<Result<_>>()?;
                 }
                 loop {
                     match b.u8()? {
@@ -311,13 +338,17 @@ fn read_streams_info(b: &mut Bytes) -> Result<StreamsInfo> {
                     if with_sizes {
                         for _ in 0..n - 1 {
                             let x = read_number(b)?;
-                            sum = sum.checked_add(x).ok_or_else(|| Error::corrupt("7z substream sizes"))?;
+                            sum = sum
+                                .checked_add(x)
+                                .ok_or_else(|| Error::corrupt("7z substream sizes"))?;
                             v.push(x);
                         }
                     }
                     let total = f.unpack_size();
                     if with_sizes || n == 1 {
-                        let last = total.checked_sub(sum).ok_or_else(|| Error::corrupt("7z substream sizes exceed folder size"))?;
+                        let last = total.checked_sub(sum).ok_or_else(|| {
+                            Error::corrupt("7z substream sizes exceed folder size")
+                        })?;
                         v.push(last);
                     } else {
                         return Err(Error::corrupt("7z substream sizes missing"));
@@ -332,13 +363,24 @@ fn read_streams_info(b: &mut Bytes) -> Result<StreamsInfo> {
                 let mut crcs: Vec<Vec<Option<u32>>> = s
                     .folders
                     .iter()
-                    .map(|f| if f.num_substreams == 1 && f.crc.is_some() { vec![f.crc] } else { vec![None; f.num_substreams as usize] })
+                    .map(|f| {
+                        if f.num_substreams == 1 && f.crc.is_some() {
+                            vec![f.crc]
+                        } else {
+                            vec![None; f.num_substreams as usize]
+                        }
+                    })
                     .collect();
                 loop {
                     match t {
                         id::END => break,
                         id::CRC => {
-                            let need: usize = s.folders.iter().filter(|f| !(f.num_substreams == 1 && f.crc.is_some())).map(|f| f.num_substreams as usize).sum();
+                            let need: usize = s
+                                .folders
+                                .iter()
+                                .filter(|f| !(f.num_substreams == 1 && f.crc.is_some()))
+                                .map(|f| f.num_substreams as usize)
+                                .sum();
                             let d = digests(b, need)?;
                             let mut it = d.into_iter();
                             for (fi, f) in s.folders.iter().enumerate() {
@@ -372,12 +414,21 @@ fn read_times(b: &mut Bytes, n: usize) -> Result<Vec<Option<u64>>> {
     if b.u8()? != 0 {
         return Err(Error::unsupported("7z external time data"));
     }
-    defined.into_iter().map(|d| if d { b.u64().map(Some) } else { Ok(None) }).collect()
+    defined
+        .into_iter()
+        .map(|d| if d { b.u64().map(Some) } else { Ok(None) })
+        .collect()
 }
 
 fn read_files(b: &mut Bytes, max_entries: u64) -> Result<Vec<FileRecord>> {
     let n = count(b, "files", max_entries.min(b.remaining() as u64 * 8 + 1))?;
-    let mut files = vec![FileRecord { has_stream: true, ..Default::default() }; n];
+    let mut files = vec![
+        FileRecord {
+            has_stream: true,
+            ..Default::default()
+        };
+        n
+    ];
     let mut empty_stream: Vec<bool> = vec![false; n];
     let mut empty_file: Vec<bool> = Vec::new();
     let mut anti: Vec<bool> = Vec::new();
@@ -402,10 +453,15 @@ fn read_files(b: &mut Bytes, max_entries: u64) -> Result<Vec<FileRecord>> {
                     return Err(Error::unsupported("7z external names"));
                 }
                 let raw = d.rest();
-                let units: Vec<u16> = raw.chunks_exact(2).map(|c| u16::from_le_bytes([c[0], c[1]])).collect();
+                let units: Vec<u16> = raw
+                    .chunks_exact(2)
+                    .map(|c| u16::from_le_bytes([c[0], c[1]]))
+                    .collect();
                 let mut names = units.split(|&u| u == 0);
                 for f in files.iter_mut() {
-                    let u = names.next().ok_or_else(|| Error::corrupt("7z: missing file names"))?;
+                    let u = names
+                        .next()
+                        .ok_or_else(|| Error::corrupt("7z: missing file names"))?;
                     f.name = String::from_utf16_lossy(u);
                 }
             }
@@ -475,7 +531,11 @@ pub fn read_header(data: &[u8], max_entries: u64) -> Result<Header> {
             }
             id::MAIN_STREAMS_INFO => h.streams = read_streams_info(&mut b)?,
             id::FILES_INFO => h.files = read_files(&mut b, max_entries)?,
-            other => return Err(Error::corrupt(format!("7z header: unexpected property {other:#x}"))),
+            other => {
+                return Err(Error::corrupt(format!(
+                    "7z header: unexpected property {other:#x}"
+                )));
+            }
         }
     }
     Ok(h)
@@ -590,7 +650,12 @@ pub fn write_streams_info(out: &mut Vec<u8>, s: &StreamsInfo) {
                 }
             }
         }
-        let crcs: Vec<u32> = s.sub_crcs.iter().flatten().map(|c| c.unwrap_or(0)).collect();
+        let crcs: Vec<u32> = s
+            .sub_crcs
+            .iter()
+            .flatten()
+            .map(|c| c.unwrap_or(0))
+            .collect();
         if !crcs.is_empty() {
             out.push(id::CRC);
             out.push(1);
@@ -613,7 +678,11 @@ pub fn write_files(out: &mut Vec<u8>, files: &[FileRecord]) {
         out.push(id::EMPTY_STREAM);
         write_number(out, v.len() as u64);
         out.extend_from_slice(&v);
-        let empty_files: Vec<bool> = files.iter().filter(|f| !f.has_stream).map(|f| !f.is_dir).collect();
+        let empty_files: Vec<bool> = files
+            .iter()
+            .filter(|f| !f.has_stream)
+            .map(|f| !f.is_dir)
+            .collect();
         if empty_files.iter().any(|&e| e) {
             let mut v = Vec::new();
             write_bool_vector(&mut v, &empty_files);
@@ -660,7 +729,18 @@ mod tests {
 
     #[test]
     fn numbers_roundtrip() {
-        for v in [0u64, 1, 0x7f, 0x80, 0x3fff, 0x4000, 1 << 20, 1 << 35, u64::MAX - 1, u64::MAX] {
+        for v in [
+            0u64,
+            1,
+            0x7f,
+            0x80,
+            0x3fff,
+            0x4000,
+            1 << 20,
+            1 << 35,
+            u64::MAX - 1,
+            u64::MAX,
+        ] {
             let mut out = Vec::new();
             write_number(&mut out, v);
             let mut b = Bytes::new(&out, "t");

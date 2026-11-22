@@ -31,7 +31,9 @@ files() {
   echo "$DATA_HOME/kio/servicemenus/67zip-extract-servicemenu.desktop"
   echo "$DATA_HOME/nemo/actions/67zip-extract-here.nemo_action"
   echo "$DATA_HOME/nemo/actions/67zip-add.nemo_action"
+  echo "$DATA_HOME/nemo/actions/67zip-add-password.nemo_action"
   echo "$DATA_HOME/nautilus/scripts/67zip - Add to archive"
+  echo "$DATA_HOME/nautilus/scripts/67zip - Compress to zip with a password"
   echo "$DATA_HOME/nautilus/scripts/67zip - Extract here"
 }
 
@@ -69,7 +71,9 @@ install -Dm644 data/kio/67zip-extract-servicemenu.desktop "$DATA_HOME/kio/servic
 chmod +x "$DATA_HOME/kio/servicemenus/"67zip-*.desktop 2>/dev/null || true
 install -Dm644 data/nemo/67zip-extract-here.nemo_action "$DATA_HOME/nemo/actions/67zip-extract-here.nemo_action"
 install -Dm644 data/nemo/67zip-add.nemo_action "$DATA_HOME/nemo/actions/67zip-add.nemo_action"
+install -Dm644 data/nemo/67zip-add-password.nemo_action "$DATA_HOME/nemo/actions/67zip-add-password.nemo_action"
 install -Dm755 data/nautilus/67zip-add.sh "$DATA_HOME/nautilus/scripts/67zip - Add to archive"
+install -Dm755 data/nautilus/67zip-add-password.sh "$DATA_HOME/nautilus/scripts/67zip - Compress to zip with a password"
 install -Dm755 data/nautilus/67zip-extract-here.sh "$DATA_HOME/nautilus/scripts/67zip - Extract here"
 
 command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database -q "$SHARE/applications" || true

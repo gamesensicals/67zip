@@ -36,7 +36,12 @@ struct Bits<'a> {
 
 impl<'a> Bits<'a> {
     fn at(data: &'a [u8], bit: u64) -> Self {
-        let mut b = Bits { data, pos: (bit / 8) as usize, buf: 0, n: 0 };
+        let mut b = Bits {
+            data,
+            pos: (bit / 8) as usize,
+            buf: 0,
+            n: 0,
+        };
         let skip = (bit % 8) as u32;
         if skip > 0 {
             let _ = b.bits(skip);
@@ -46,7 +51,9 @@ impl<'a> Bits<'a> {
     #[inline]
     fn refill(&mut self) {
         while self.n <= 56 {
-            let Some(&byte) = self.data.get(self.pos) else { return };
+            let Some(&byte) = self.data.get(self.pos) else {
+                return;
+            };
             self.buf |= u64::from(byte) << (56 - self.n);
             self.pos += 1;
             self.n += 8;
@@ -100,7 +107,11 @@ impl BzCrc {
             let mut c = (i as u32) << 24;
             let mut k = 0;
             while k < 8 {
-                c = if c & 0x8000_0000 != 0 { (c << 1) ^ 0x04C1_1DB7 } else { c << 1 };
+                c = if c & 0x8000_0000 != 0 {
+                    (c << 1) ^ 0x04C1_1DB7
+                } else {
+                    c << 1
+                };
                 k += 1;
             }
             t[i] = c;
@@ -124,9 +135,20 @@ struct Huffman {
 
 impl Huffman {
     fn new(lens: &[u8]) -> Result<Huffman> {
-        let min_len = i32::from(*lens.iter().min().ok_or_else(|| corrupt("empty code table"))?);
+        let min_len = i32::from(
+            *lens
+                .iter()
+                .min()
+                .ok_or_else(|| corrupt("empty code table"))?,
+        );
         let max_len = i32::from(*lens.iter().max().unwrap_or(&0));
-        let mut h = Huffman { limit: [0; 21], base: [0; 22], perm: [0; MAX_ALPHA], min_len, fast: vec![0; 1 << FAST_BITS] };
+        let mut h = Huffman {
+            limit: [0; 21],
+            base: [0; 22],
+            perm: [0; MAX_ALPHA],
+            min_len,
+            fast: vec![0; 1 << FAST_BITS],
+        };
         let mut pp = 0;
         for len in min_len..=max_len {
             for (sym, &l) in lens.iter().enumerate() {
@@ -164,7 +186,11 @@ impl Huffman {
         }
         // Fill the fast table by decoding every 10-bit prefix the slow way
         // (only possible when some codes are short enough).
-        let prefixes = if min_len <= FAST_BITS as i32 { 1u32 << FAST_BITS } else { 0 };
+        let prefixes = if min_len <= FAST_BITS as i32 {
+            1u32 << FAST_BITS
+        } else {
+            0
+        };
         for prefix in 0..prefixes {
             let mut len = min_len;
             let mut code = (prefix >> (FAST_BITS as i32 - len)) as i32;
@@ -215,10 +241,17 @@ impl Huffman {
 
 /// Decodes one block. `br` is positioned right after the block magic.
 /// Returns the stored block CRC; output is appended to `out`.
-fn decode_block(br: &mut Bits, max_block: usize, out: &mut Vec<u8>, tt: &mut Vec<u32>) -> Result<u32> {
+fn decode_block(
+    br: &mut Bits,
+    max_block: usize,
+    out: &mut Vec<u8>,
+    tt: &mut Vec<u32>,
+) -> Result<u32> {
     let stored_crc = br.bits(32)?;
     if br.bit()? {
-        return Err(Error::unsupported("bzip2 randomised blocks (made by bzip2 0.9.0, 1997)"));
+        return Err(Error::unsupported(
+            "bzip2 randomised blocks (made by bzip2 0.9.0, 1997)",
+        ));
     }
     let orig_ptr = br.bits(24)? as usize;
 
@@ -297,8 +330,12 @@ fn decode_block(br: &mut Bits, max_block: usize, out: &mut Vec<u8>, tt: &mut Vec
     let mut table = &tables[0];
     let mut next_sym = |br: &mut Bits| -> Result<usize> {
         if left_in_group == 0 {
-            let s = *selectors.get(group).ok_or_else(|| corrupt("ran out of selectors"))?;
-            table = tables.get(usize::from(s)).ok_or_else(|| corrupt("bad selector"))?;
+            let s = *selectors
+                .get(group)
+                .ok_or_else(|| corrupt("ran out of selectors"))?;
+            table = tables
+                .get(usize::from(s))
+                .ok_or_else(|| corrupt("bad selector"))?;
             group += 1;
             left_in_group = 50;
         }
@@ -426,7 +463,9 @@ fn scan_parallel(data: &[u8], from_bit: u64, threads: usize) -> Vec<(u64, bool)>
                 })
             })
             .collect();
-        hs.into_iter().flat_map(|h| h.join().unwrap_or_default()).collect()
+        hs.into_iter()
+            .flat_map(|h| h.join().unwrap_or_default())
+            .collect()
     });
     all.sort_unstable();
     all.dedup();
@@ -478,7 +517,19 @@ pub struct BzDecoder<R: Read> {
 
 impl<R: Read> BzDecoder<R> {
     pub fn new(inner: R, threads: usize) -> Self {
-        BzDecoder { inner, threads: threads.max(1), buf: Vec::new(), pos: 0, eof_in: false, out: VecDeque::new(), stream: None, streams_seen: 0, done: false, cands: None, tt: Vec::new() }
+        BzDecoder {
+            inner,
+            threads: threads.max(1),
+            buf: Vec::new(),
+            pos: 0,
+            eof_in: false,
+            out: VecDeque::new(),
+            stream: None,
+            streams_seen: 0,
+            done: false,
+            cands: None,
+            tt: Vec::new(),
+        }
     }
 
     fn fill(&mut self) -> Result<()> {
@@ -527,7 +578,10 @@ impl<R: Read> BzDecoder<R> {
             return Ok(true);
         };
         let mut br = Bits::at(data, self.pos);
-        let magic = match br.bits(24).and_then(|a| br.bits(24).map(|b| (u64::from(a) << 24) | u64::from(b))) {
+        let magic = match br
+            .bits(24)
+            .and_then(|a| br.bits(24).map(|b| (u64::from(a) << 24) | u64::from(b)))
+        {
             Ok(m) => m,
             Err(_) if !self.eof_in => return Ok(false),
             Err(e) => return Err(e),
@@ -568,7 +622,9 @@ impl<R: Read> BzDecoder<R> {
     /// Returns false when the layout is not simple enough (the caller then
     /// uses the sequential parser).
     fn step_parallel(&mut self, out: &mut Vec<u8>) -> Result<bool> {
-        let Some((max_block, combined)) = self.stream else { return Ok(false) };
+        let Some((max_block, combined)) = self.stream else {
+            return Ok(false);
+        };
         if self.cands.is_none() {
             self.cands = Some(scan_parallel(&self.buf, self.pos, self.threads));
         }
@@ -595,17 +651,21 @@ impl<R: Read> BzDecoder<R> {
         }
         let threads = self.threads.min(segs.len());
         let next = std::sync::atomic::AtomicUsize::new(0);
-        let slots: Vec<std::sync::Mutex<Option<Result<(Vec<u8>, u32, u64)>>>> = segs.iter().map(|_| std::sync::Mutex::new(None)).collect();
+        let slots: Vec<std::sync::Mutex<Option<Result<(Vec<u8>, u32, u64)>>>> =
+            segs.iter().map(|_| std::sync::Mutex::new(None)).collect();
         std::thread::scope(|s| {
             for _ in 0..threads {
                 s.spawn(|| {
                     let mut tt = Vec::new();
                     loop {
                         let i = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                        let Some(&(start, _)) = segs.get(i) else { break };
+                        let Some(&(start, _)) = segs.get(i) else {
+                            break;
+                        };
                         let mut br = Bits::at(data, start + 48);
                         let mut o = Vec::new();
-                        let r = decode_block(&mut br, max_block, &mut o, &mut tt).map(|crc| (o, crc, br.position()));
+                        let r = decode_block(&mut br, max_block, &mut o, &mut tt)
+                            .map(|crc| (o, crc, br.position()));
                         if let Ok(mut slot) = slots[i].lock() {
                             *slot = Some(r);
                         }
@@ -613,8 +673,15 @@ impl<R: Read> BzDecoder<R> {
                 });
             }
         });
-        let results: Vec<Result<(Vec<u8>, u32, u64)>> =
-            slots.into_iter().map(|m| m.into_inner().ok().flatten().unwrap_or_else(|| Err(corrupt("block not decoded")))).collect();
+        let results: Vec<Result<(Vec<u8>, u32, u64)>> = slots
+            .into_iter()
+            .map(|m| {
+                m.into_inner()
+                    .ok()
+                    .flatten()
+                    .unwrap_or_else(|| Err(corrupt("block not decoded")))
+            })
+            .collect();
         let mut comb = combined;
         let mut pos = self.pos;
         for (res, &(_, end)) in results.into_iter().zip(segs.iter()) {
@@ -643,7 +710,9 @@ impl<R: Read> BzDecoder<R> {
     fn produce(&mut self) -> Result<()> {
         let mut out = Vec::new();
         while out.is_empty() && !self.done {
-            if self.buf.len() as u64 * 8 <= self.pos + 64 || (!self.eof_in && (self.buf.len() as u64 * 8 - self.pos) < (2 << 20) * 8) {
+            if self.buf.len() as u64 * 8 <= self.pos + 64
+                || (!self.eof_in && (self.buf.len() as u64 * 8 - self.pos) < (2 << 20) * 8)
+            {
                 self.fill()?;
             }
             if self.buf.len() as u64 * 8 <= self.pos {
@@ -656,7 +725,11 @@ impl<R: Read> BzDecoder<R> {
                 self.done = true;
                 break;
             }
-            let progressed = if self.threads > 1 && self.step_parallel(&mut out)? { true } else { self.step_sequential(&mut out)? };
+            let progressed = if self.threads > 1 && self.step_parallel(&mut out)? {
+                true
+            } else {
+                self.step_sequential(&mut out)?
+            };
             if !progressed {
                 if self.eof_in {
                     return Err(corrupt("data ends inside a block"));
@@ -714,14 +787,24 @@ mod tests {
                 x ^= x << 13;
                 x ^= x >> 7;
                 x ^= x << 17;
-                if i % 7 < 3 { b'a' + (x % 3) as u8 } else { (x >> 20) as u8 }
+                if i % 7 < 3 {
+                    b'a' + (x % 3) as u8
+                } else {
+                    (x >> 20) as u8
+                }
             })
             .collect()
     }
 
     #[test]
     fn roundtrip_levels_and_threads() {
-        for (n, level) in [(0usize, 9u32), (1, 9), (5000, 1), (250_000, 1), (2_500_000, 9)] {
+        for (n, level) in [
+            (0usize, 9u32),
+            (1, 9),
+            (5000, 1),
+            (250_000, 1),
+            (2_500_000, 9),
+        ] {
             let data = sample(n);
             let packed = compress(&data, level);
             for threads in [1, 4] {
@@ -743,7 +826,9 @@ mod tests {
         expect.extend(b"second stream");
         for threads in [1, 3] {
             let mut out = Vec::new();
-            BzDecoder::new(&packed[..], threads).read_to_end(&mut out).unwrap();
+            BzDecoder::new(&packed[..], threads)
+                .read_to_end(&mut out)
+                .unwrap();
             assert_eq!(out, expect);
         }
     }

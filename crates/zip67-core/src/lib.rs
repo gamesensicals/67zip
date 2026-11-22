@@ -29,7 +29,7 @@ pub mod split;
 pub mod update;
 pub mod util;
 
-pub use archive::{open, ArchiveInfo, ArchiveReader, EntryVisitor, OpenOptions};
+pub use archive::{ArchiveInfo, ArchiveReader, EntryVisitor, OpenOptions, open};
 pub use detect::{ArchiveType, Compression, Container};
 pub use entry::{Entry, EntryKind};
 pub use error::{Error, Result};

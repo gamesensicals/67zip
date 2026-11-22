@@ -75,7 +75,10 @@ pub struct ArchiveType {
 
 impl ArchiveType {
     pub const fn new(container: Container, compression: Compression) -> Self {
-        ArchiveType { container, compression }
+        ArchiveType {
+            container,
+            compression,
+        }
     }
     pub const SEVEN_Z: ArchiveType = ArchiveType::new(Container::SevenZ, Compression::None);
     pub const ZIP: ArchiveType = ArchiveType::new(Container::Zip, Compression::None);
@@ -150,7 +153,10 @@ impl ArchiveType {
     }
     /// Can entries be added/removed in place (by rewriting)?
     pub fn can_update(&self) -> bool {
-        matches!(self.container, Container::SevenZ | Container::Zip | Container::Tar)
+        matches!(
+            self.container,
+            Container::SevenZ | Container::Zip | Container::Tar
+        )
     }
 
     /// Guess from a file name alone (split-part names count as their
@@ -243,7 +249,11 @@ pub fn detect(src: &mut dyn ReadSeek, name: &str, limits: &Limits) -> Result<Arc
     if head.starts_with(&SIG_7Z) {
         return Ok(ArchiveType::SEVEN_Z);
     }
-    if head.starts_with(b"PK\x03\x04") || head.starts_with(b"PK\x05\x06") || head.starts_with(b"PK\x07\x08") || head.starts_with(b"PK00PK") {
+    if head.starts_with(b"PK\x03\x04")
+        || head.starts_with(b"PK\x05\x06")
+        || head.starts_with(b"PK\x07\x08")
+        || head.starts_with(b"PK00PK")
+    {
         return Ok(ArchiveType::ZIP);
     }
     if crate::formats::rar::is_rar(&head) {
@@ -252,26 +262,45 @@ pub fn detect(src: &mut dyn ReadSeek, name: &str, limits: &Limits) -> Result<Arc
     if let Some(c) = compression_magic(&head) {
         src.seek(SeekFrom::Start(0))?;
         let inner = peek_decoded_tar(src, c, limits);
-        return Ok(if inner { ArchiveType::new(Container::Tar, c) } else { ArchiveType::new(Container::Raw, c) });
+        return Ok(if inner {
+            ArchiveType::new(Container::Tar, c)
+        } else {
+            ArchiveType::new(Container::Raw, c)
+        });
     }
     if head.len() >= 512 && crate::formats::tar::is_tar_header(&head[..512]) {
         return Ok(ArchiveType::TAR);
     }
     // ISO 9660: "CD001" at sector 16 + 1.
     let mut iso = [0u8; 6];
-    if src.seek(SeekFrom::Start(0x8000)).is_ok() && crate::io::read_full(src, &mut iso)? == 6 && &iso[1..6] == b"CD001" {
+    if src.seek(SeekFrom::Start(0x8000)).is_ok()
+        && crate::io::read_full(src, &mut iso)? == 6
+        && &iso[1..6] == b"CD001"
+    {
         return Ok(ArchiveType::ISO);
     }
     let by_name = ArchiveType::from_file_name(name);
     if by_name.is_some_and(|t| t.compression == Compression::Lzma) && looks_like_lzma_alone(&head) {
         src.seek(SeekFrom::Start(0))?;
         let inner = peek_decoded_tar(src, Compression::Lzma, limits);
-        return Ok(ArchiveType::new(if inner { Container::Tar } else { Container::Raw }, Compression::Lzma));
+        return Ok(ArchiveType::new(
+            if inner {
+                Container::Tar
+            } else {
+                Container::Raw
+            },
+            Compression::Lzma,
+        ));
     }
     // Self-extracting RAR archives.
     let lower = name.to_ascii_lowercase();
-    let program = head.starts_with(b"MZ") || head.starts_with(b"\x7fELF") || lower.ends_with(".exe") || lower.ends_with(".sfx");
-    if crate::formats::rar::find_sfx_signature(&head, name).is_some() || (program && sfx_rar(src, name)?) {
+    let program = head.starts_with(b"MZ")
+        || head.starts_with(b"\x7fELF")
+        || lower.ends_with(".exe")
+        || lower.ends_with(".sfx");
+    if crate::formats::rar::find_sfx_signature(&head, name).is_some()
+        || (program && sfx_rar(src, name)?)
+    {
         return Ok(ArchiveType::RAR);
     }
     // Self-extracting or prefixed zip files: look for the end record.
@@ -281,7 +310,9 @@ pub fn detect(src: &mut dyn ReadSeek, name: &str, limits: &Limits) -> Result<Arc
     // 7z SFX: signature somewhere in the first 1 MiB at a 4-byte boundary... keep simple:
     if let Some(pos) = head.windows(6).position(|w| w == SIG_7Z) {
         if pos > 0 {
-            return Err(Error::unsupported("self-extracting 7z archives (open the .exe with 67zip after renaming is not needed; support is planned)"));
+            return Err(Error::unsupported(
+                "self-extracting 7z archives (open the .exe with 67zip after renaming is not needed; support is planned)",
+            ));
         }
     }
     Err(Error::UnsupportedFormat)
@@ -300,7 +331,10 @@ fn peek_decoded_tar(src: &mut dyn ReadSeek, c: Compression, limits: &Limits) -> 
     let mut bytes = Vec::new();
     {
         let reader: &mut dyn ReadSeek = src;
-        let boxed: Box<dyn Read + Send + '_> = Box::new(LimitedPeek { inner: reader, left: 4 << 20 });
+        let boxed: Box<dyn Read + Send + '_> = Box::new(LimitedPeek {
+            inner: reader,
+            left: 4 << 20,
+        });
         if let Ok(b) = crate::codecs::peek_decoded(c, boxed, 512, limits) {
             bytes = b;
         }
@@ -332,7 +366,10 @@ mod tests {
 
     #[test]
     fn ids_roundtrip() {
-        for id in ["7z", "zip", "rar", "tar", "tar.gz", "tar.bz2", "tar.xz", "tar.zst", "tar.lz", "gz", "xz", "zst", "lzma", "iso"] {
+        for id in [
+            "7z", "zip", "rar", "tar", "tar.gz", "tar.bz2", "tar.xz", "tar.zst", "tar.lz", "gz",
+            "xz", "zst", "lzma", "iso",
+        ] {
             assert_eq!(ArchiveType::from_id(id).unwrap().id(), id);
         }
         assert_eq!(ArchiveType::from_file_name("x.TGZ").unwrap().id(), "tar.gz");

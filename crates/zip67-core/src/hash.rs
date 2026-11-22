@@ -22,8 +22,15 @@ pub enum HashKind {
 }
 
 impl HashKind {
-    pub const ALL: [HashKind; 7] =
-        [HashKind::Crc32, HashKind::Crc64, HashKind::Sha256, HashKind::Sha1, HashKind::Sha512, HashKind::Blake3, HashKind::Md5];
+    pub const ALL: [HashKind; 7] = [
+        HashKind::Crc32,
+        HashKind::Crc64,
+        HashKind::Sha256,
+        HashKind::Sha1,
+        HashKind::Sha512,
+        HashKind::Blake3,
+        HashKind::Md5,
+    ];
     pub fn name(self) -> &'static str {
         match self {
             HashKind::Crc32 => "CRC32",
@@ -37,7 +44,9 @@ impl HashKind {
     }
     pub fn from_name(s: &str) -> Option<Self> {
         let s = s.to_ascii_lowercase().replace('-', "");
-        HashKind::ALL.into_iter().find(|k| k.name().to_ascii_lowercase().replace('-', "") == s)
+        HashKind::ALL
+            .into_iter()
+            .find(|k| k.name().to_ascii_lowercase().replace('-', "") == s)
     }
 }
 
@@ -114,7 +123,11 @@ impl MultiHasher {
     }
 }
 
-pub fn hash_reader(r: &mut dyn Read, kinds: &[HashKind], progress: &Progress) -> Result<(u64, Vec<(HashKind, String)>)> {
+pub fn hash_reader(
+    r: &mut dyn Read,
+    kinds: &[HashKind],
+    progress: &Progress,
+) -> Result<(u64, Vec<(HashKind, String)>)> {
     let mut h = MultiHasher::new(kinds);
     let mut buf = vec![0u8; 1 << 20];
     let mut total = 0u64;
@@ -134,7 +147,11 @@ pub fn hash_reader(r: &mut dyn Read, kinds: &[HashKind], progress: &Progress) ->
     Ok((total, h.finish()))
 }
 
-pub fn hash_file(path: &Path, kinds: &[HashKind], progress: &Progress) -> Result<(u64, Vec<(HashKind, String)>)> {
+pub fn hash_file(
+    path: &Path,
+    kinds: &[HashKind],
+    progress: &Progress,
+) -> Result<(u64, Vec<(HashKind, String)>)> {
     let mut f = BufReader::new(File::open(path)?);
     hash_reader(&mut f, kinds, progress)
 }
@@ -146,9 +163,17 @@ mod tests {
     #[test]
     fn known_values() {
         let p = Progress::new();
-        let (_, v) = hash_reader(&mut &b"abc"[..], &[HashKind::Crc32, HashKind::Sha256, HashKind::Md5], &p).unwrap();
+        let (_, v) = hash_reader(
+            &mut &b"abc"[..],
+            &[HashKind::Crc32, HashKind::Sha256, HashKind::Md5],
+            &p,
+        )
+        .unwrap();
         assert_eq!(v[0].1, "352441C2");
-        assert_eq!(v[1].1, "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
+        assert_eq!(
+            v[1].1,
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
         assert_eq!(v[2].1, "900150983cd24fb0d6963f7d28e17f72");
     }
 }

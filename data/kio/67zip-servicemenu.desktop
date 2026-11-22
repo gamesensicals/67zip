@@ -1,7 +1,7 @@
 [Desktop Entry]
 Type=Service
 MimeType=all/allfiles;inode/directory;
-Actions=compress;compressZip;
+Actions=compress;compressZip;compressZipPassword;
 X-KDE-Submenu=67zip
 Icon=io.github.gamesensicals.SixtySevenZip
 
@@ -14,3 +14,8 @@ Exec=67zip --add %F
 Name=Compress to .zip
 Icon=io.github.gamesensicals.SixtySevenZip
 Exec=sh -c '67z a -bd -tzip -- "$1.zip" "$@"' sh %F
+
+[Desktop Action compressZipPassword]
+Name=Compress to .zip with a password…
+Icon=io.github.gamesensicals.SixtySevenZip
+Exec=67zip --add-with-password %F

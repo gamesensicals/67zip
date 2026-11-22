@@ -13,7 +13,12 @@ pub(crate) trait Ppmd7RangeDecoder {
     fn decode_bit_0(&mut self, src: &mut dyn ByteSource, size: u32) -> Result<(), std::io::Error>;
     fn decode_bit_1(&mut self, size: u32);
     fn decode(&mut self, start: u32, size: u32);
-    fn decode_final(&mut self, src: &mut dyn ByteSource, start: u32, freq: u32) -> Result<(), std::io::Error>;
+    fn decode_final(
+        &mut self,
+        src: &mut dyn ByteSource,
+        start: u32,
+        freq: u32,
+    ) -> Result<(), std::io::Error>;
     fn normalize_remote(&mut self, src: &mut dyn ByteSource) -> Result<(), std::io::Error>;
 }
 
@@ -36,7 +41,11 @@ impl RangeDecoder7a {
         if code == 0xFFFF_FFFF {
             return Err(Error::RangeDecoderInitialization);
         }
-        Ok(Self { range: 0xFFFF_FFFF, code, low: 0 })
+        Ok(Self {
+            range: 0xFFFF_FFFF,
+            code,
+            low: 0,
+        })
     }
 
     #[inline(always)]
@@ -103,7 +112,12 @@ impl Ppmd7RangeDecoder for RangeDecoder7a {
     }
 
     #[inline(always)]
-    fn decode_final(&mut self, src: &mut dyn ByteSource, start: u32, freq: u32) -> Result<(), std::io::Error> {
+    fn decode_final(
+        &mut self,
+        src: &mut dyn ByteSource,
+        start: u32,
+        freq: u32,
+    ) -> Result<(), std::io::Error> {
         Ppmd7RangeDecoder::decode(self, start, freq);
         self.normalize(src)
     }

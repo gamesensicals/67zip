@@ -10,10 +10,10 @@ use std::time::Duration;
 
 use zip67_core::extract::{Answer, Prompt};
 use zip67_core::update::{Changes, UpdateOptions};
-use zip67_core::{open, Entry, Error, OpenOptions, Password, Progress};
+use zip67_core::{Entry, Error, OpenOptions, Password, Progress, open};
 
 use crate::protocol::{Control, Event, Failure, HashResult, Job, Question, Reply, Request};
-use crate::sandbox::{apply, Access2};
+use crate::sandbox::{Access2, apply};
 
 type Out = Arc<Mutex<io::Stdout>>;
 
@@ -41,7 +41,10 @@ fn parent(p: &Path) -> PathBuf {
 pub fn access_for_job(job: &Job) -> Access2 {
     let mut a = access_for(&job.request);
     if let Some(stage) = &job.stage
-        && matches!(job.request, Request::Create { .. } | Request::AddFiles { .. } | Request::Update { .. })
+        && matches!(
+            job.request,
+            Request::Create { .. } | Request::AddFiles { .. } | Request::Update { .. }
+        )
     {
         a.write = vec![stage.clone()];
     }
@@ -51,23 +54,45 @@ pub fn access_for_job(job: &Job) -> Access2 {
 /// Files and folders a request needs, nothing more.
 pub fn access_for(req: &Request) -> Access2 {
     match req {
-        Request::List { archive, .. } | Request::Test { archive, .. } => Access2 { read: parts_of(archive), write: vec![] },
+        Request::List { archive, .. } | Request::Test { archive, .. } => Access2 {
+            read: parts_of(archive),
+            write: vec![],
+        },
         Request::Extract { archive, dest, .. } => {
             let _ = std::fs::create_dir_all(dest);
-            Access2 { read: parts_of(archive), write: vec![dest.clone()] }
+            Access2 {
+                read: parts_of(archive),
+                write: vec![dest.clone()],
+            }
         }
-        Request::Create { output, inputs, .. } => Access2 { read: inputs.clone(), write: vec![parent(output)] },
-        Request::AddFiles { archive, inputs, .. } => {
+        Request::Create { output, inputs, .. } => Access2 {
+            read: inputs.clone(),
+            write: vec![parent(output)],
+        },
+        Request::AddFiles {
+            archive, inputs, ..
+        } => {
             let mut read = inputs.clone();
             read.push(archive.clone());
-            Access2 { read, write: vec![parent(archive)] }
+            Access2 {
+                read,
+                write: vec![parent(archive)],
+            }
         }
-        Request::Update { archive, changes, .. } => {
+        Request::Update {
+            archive, changes, ..
+        } => {
             let mut read: Vec<PathBuf> = changes.add.iter().map(|(p, _)| p.clone()).collect();
             read.push(archive.clone());
-            Access2 { read, write: vec![parent(archive)] }
+            Access2 {
+                read,
+                write: vec![parent(archive)],
+            }
         }
-        Request::Hash { paths, .. } => Access2 { read: paths.clone(), write: vec![] },
+        Request::Hash { paths, .. } => Access2 {
+            read: paths.clone(),
+            write: vec![],
+        },
         Request::Benchmark { .. } => Access2::default(),
     }
 }
@@ -78,10 +103,22 @@ struct WorkerPrompt {
 }
 
 impl Prompt for WorkerPrompt {
-    fn overwrite(&mut self, path: &str, existing_size: u64, existing_mtime: Option<i64>, entry: &Entry) -> Answer {
+    fn overwrite(
+        &mut self,
+        path: &str,
+        existing_size: u64,
+        existing_mtime: Option<i64>,
+        entry: &Entry,
+    ) -> Answer {
         send(
             &self.out,
-            &Event::Ask(Question { path: path.to_string(), existing_size, existing_mtime, new_size: entry.size, new_mtime: entry.mtime }),
+            &Event::Ask(Question {
+                path: path.to_string(),
+                existing_size,
+                existing_mtime,
+                new_size: entry.size,
+                new_mtime: entry.mtime,
+            }),
         );
         self.answers.recv().unwrap_or(Answer::Cancel)
     }
@@ -92,78 +129,225 @@ fn pw(p: &Option<String>) -> Option<Password> {
 }
 
 /// Runs a job: like [`execute`], writing archives into the staging folder.
-pub fn execute_job(job: Job, progress: &Progress, prompt: &mut dyn Prompt) -> zip67_core::Result<Reply> {
-    let Some(stage) = job.stage else { return execute(job.request, progress, prompt) };
+pub fn execute_job(
+    job: Job,
+    progress: &Progress,
+    prompt: &mut dyn Prompt,
+) -> zip67_core::Result<Reply> {
+    let Some(stage) = job.stage else {
+        return execute(job.request, progress, prompt);
+    };
     match job.request {
-        Request::Create { output, inputs, spec } => {
-            let opts = zip67_core::create::CreateOptions { out_dir: Some(stage), ..spec.to_options()? };
-            Ok(Reply::Created(zip67_core::create::create(&output, &inputs, &opts, progress)?))
+        Request::Create {
+            output,
+            inputs,
+            spec,
+        } => {
+            let opts = zip67_core::create::CreateOptions {
+                out_dir: Some(stage),
+                ..spec.to_options()?
+            };
+            Ok(Reply::Created(zip67_core::create::create(
+                &output, &inputs, &opts, progress,
+            )?))
         }
-        Request::AddFiles { archive, inputs, arc_dir, spec } => {
-            let opts = zip67_core::create::CreateOptions { out_dir: Some(stage), ..spec.to_options()? };
-            Ok(Reply::Created(zip67_core::update::add_files(&archive, &inputs, &arc_dir, &opts, progress)?))
+        Request::AddFiles {
+            archive,
+            inputs,
+            arc_dir,
+            spec,
+        } => {
+            let opts = zip67_core::create::CreateOptions {
+                out_dir: Some(stage),
+                ..spec.to_options()?
+            };
+            Ok(Reply::Created(zip67_core::update::add_files(
+                &archive, &inputs, &arc_dir, &opts, progress,
+            )?))
         }
-        Request::Update { archive, password, changes, level, threads } => {
-            let ch = Changes { add: changes.add, delete: changes.delete, rename: changes.rename, new_dirs: changes.new_dirs };
+        Request::Update {
+            archive,
+            password,
+            changes,
+            level,
+            threads,
+        } => {
+            let ch = Changes {
+                add: changes.add,
+                delete: changes.delete,
+                rename: changes.rename,
+                new_dirs: changes.new_dirs,
+            };
             let opts = UpdateOptions {
                 password: pw(&password),
                 level,
-                threads: if threads == 0 { zip67_core::util::default_threads() } else { threads },
+                threads: if threads == 0 {
+                    zip67_core::util::default_threads()
+                } else {
+                    threads
+                },
                 out_dir: Some(stage),
                 ..Default::default()
             };
-            Ok(Reply::Created(zip67_core::update::modify(&archive, &ch, &opts, progress)?))
+            Ok(Reply::Created(zip67_core::update::modify(
+                &archive, &ch, &opts, progress,
+            )?))
         }
         other => execute(other, progress, prompt),
     }
 }
 
-pub fn execute(req: Request, progress: &Progress, prompt: &mut dyn Prompt) -> zip67_core::Result<Reply> {
+pub fn execute(
+    req: Request,
+    progress: &Progress,
+    prompt: &mut dyn Prompt,
+) -> zip67_core::Result<Reply> {
     match req {
         Request::List { archive, password } => {
-            let r = open(&archive, &OpenOptions { password: pw(&password), ..Default::default() })?;
-            Ok(Reply::Listing { archive_type: r.archive_type().id(), entries: r.entries().to_vec(), info: r.info() })
+            let r = open(
+                &archive,
+                &OpenOptions {
+                    password: pw(&password),
+                    ..Default::default()
+                },
+            )?;
+            Ok(Reply::Listing {
+                archive_type: r.archive_type().id(),
+                entries: r.entries().to_vec(),
+                info: r.info(),
+            })
         }
-        Request::Extract { archive, password, dest, selection, options } => {
-            let mut r = open(&archive, &OpenOptions { password: pw(&password), limits: options.limits.clone(), ..Default::default() })?;
-            let rep = zip67_core::extract::extract_to(r.as_mut(), &dest, &selection, &options, Some(prompt), progress)?;
+        Request::Extract {
+            archive,
+            password,
+            dest,
+            selection,
+            options,
+        } => {
+            let mut r = open(
+                &archive,
+                &OpenOptions {
+                    password: pw(&password),
+                    limits: options.limits.clone(),
+                    ..Default::default()
+                },
+            )?;
+            let rep = zip67_core::extract::extract_to(
+                r.as_mut(),
+                &dest,
+                &selection,
+                &options,
+                Some(prompt),
+                progress,
+            )?;
             Ok(Reply::Extracted(rep))
         }
-        Request::Test { archive, password, selection } => {
-            let mut r = open(&archive, &OpenOptions { password: pw(&password), ..Default::default() })?;
-            Ok(Reply::Tested(zip67_core::extract::test(r.as_mut(), &selection, progress)?))
+        Request::Test {
+            archive,
+            password,
+            selection,
+        } => {
+            let mut r = open(
+                &archive,
+                &OpenOptions {
+                    password: pw(&password),
+                    ..Default::default()
+                },
+            )?;
+            Ok(Reply::Tested(zip67_core::extract::test(
+                r.as_mut(),
+                &selection,
+                progress,
+            )?))
         }
-        Request::Create { output, inputs, spec } => Ok(Reply::Created(zip67_core::create::create(&output, &inputs, &spec.to_options()?, progress)?)),
-        Request::AddFiles { archive, inputs, arc_dir, spec } => {
-            Ok(Reply::Created(zip67_core::update::add_files(&archive, &inputs, &arc_dir, &spec.to_options()?, progress)?))
-        }
-        Request::Update { archive, password, changes, level, threads } => {
-            let ch = Changes { add: changes.add, delete: changes.delete, rename: changes.rename, new_dirs: changes.new_dirs };
+        Request::Create {
+            output,
+            inputs,
+            spec,
+        } => Ok(Reply::Created(zip67_core::create::create(
+            &output,
+            &inputs,
+            &spec.to_options()?,
+            progress,
+        )?)),
+        Request::AddFiles {
+            archive,
+            inputs,
+            arc_dir,
+            spec,
+        } => Ok(Reply::Created(zip67_core::update::add_files(
+            &archive,
+            &inputs,
+            &arc_dir,
+            &spec.to_options()?,
+            progress,
+        )?)),
+        Request::Update {
+            archive,
+            password,
+            changes,
+            level,
+            threads,
+        } => {
+            let ch = Changes {
+                add: changes.add,
+                delete: changes.delete,
+                rename: changes.rename,
+                new_dirs: changes.new_dirs,
+            };
             let opts = UpdateOptions {
                 password: pw(&password),
                 level,
-                threads: if threads == 0 { zip67_core::util::default_threads() } else { threads },
+                threads: if threads == 0 {
+                    zip67_core::util::default_threads()
+                } else {
+                    threads
+                },
                 ..Default::default()
             };
-            Ok(Reply::Created(zip67_core::update::modify(&archive, &ch, &opts, progress)?))
+            Ok(Reply::Created(zip67_core::update::modify(
+                &archive, &ch, &opts, progress,
+            )?))
         }
         Request::Hash { paths, kinds } => {
-            let total: u64 = paths.iter().filter_map(|p| std::fs::metadata(p).ok()).map(|m| m.len()).sum();
+            let total: u64 = paths
+                .iter()
+                .filter_map(|p| std::fs::metadata(p).ok())
+                .map(|m| m.len())
+                .sum();
             progress.set_total(total);
             let mut out = Vec::new();
             for p in paths {
                 progress.set_current(&p.to_string_lossy());
                 match zip67_core::hash::hash_file(&p, &kinds, progress) {
-                    Ok((size, values)) => out.push(HashResult { path: p, size, values, error: None }),
+                    Ok((size, values)) => out.push(HashResult {
+                        path: p,
+                        size,
+                        values,
+                        error: None,
+                    }),
                     Err(Error::Cancelled) => return Err(Error::Cancelled),
-                    Err(e) => out.push(HashResult { path: p, size: 0, values: vec![], error: Some(e.to_string()) }),
+                    Err(e) => out.push(HashResult {
+                        path: p,
+                        size: 0,
+                        values: vec![],
+                        error: Some(e.to_string()),
+                    }),
                 }
             }
             Ok(Reply::Hashes(out))
         }
-        Request::Benchmark { seconds, threads, dict_size: _ } => {
+        Request::Benchmark {
+            seconds,
+            threads,
+            dict_size: _,
+        } => {
             let size = (seconds.clamp(1, 60) as usize) * (8 << 20);
-            Ok(Reply::Benchmark(zip67_core::bench::run(size, threads.max(1), progress)?))
+            Ok(Reply::Benchmark(zip67_core::bench::run(
+                size,
+                threads.max(1),
+                progress,
+            )?))
         }
     }
 }
@@ -175,18 +359,35 @@ pub fn run() -> i32 {
     if stdin.lock().read_line(&mut first).is_err() || first.len() > 64 << 20 {
         return 2;
     }
-    let job: Job = match serde_json::from_str::<Job>(first.trim()).or_else(|_| serde_json::from_str::<Request>(first.trim()).map(|request| Job { request, stage: None })) {
+    let job: Job = match serde_json::from_str::<Job>(first.trim()).or_else(|_| {
+        serde_json::from_str::<Request>(first.trim()).map(|request| Job {
+            request,
+            stage: None,
+        })
+    }) {
         Ok(j) => j,
         Err(e) => {
             let out: Out = Arc::new(Mutex::new(io::stdout()));
-            send(&out, &Event::Failed(Failure { kind: crate::protocol::FailKind::Invalid, message: format!("bad request: {e}") }));
+            send(
+                &out,
+                &Event::Failed(Failure {
+                    kind: crate::protocol::FailKind::Invalid,
+                    message: format!("bad request: {e}"),
+                }),
+            );
             return 2;
         }
     };
     // Lock down before anything else happens (and before any thread starts).
     let status = apply(&access_for_job(&job));
     let out: Out = Arc::new(Mutex::new(io::stdout()));
-    send(&out, &Event::Hello { version: zip67_core::VERSION.into(), sandbox: status });
+    send(
+        &out,
+        &Event::Hello {
+            version: zip67_core::VERSION.into(),
+            sandbox: status,
+        },
+    );
 
     let progress = Progress::new();
     let (atx, arx) = mpsc::channel();
@@ -219,7 +420,10 @@ pub fn run() -> i32 {
             }
         })
     };
-    let mut prompt = WorkerPrompt { out: out.clone(), answers: arx };
+    let mut prompt = WorkerPrompt {
+        out: out.clone(),
+        answers: arx,
+    };
     let result = execute_job(job, &progress, &mut prompt);
     done.store(true, Ordering::Relaxed);
     let _ = ticker.join();
@@ -243,11 +447,21 @@ mod tests {
 
     #[test]
     fn staged_jobs_write_only_to_the_stage() {
-        let req = Request::Create { output: "/home/u/out.7z".into(), inputs: vec!["/home/u/doc".into()], spec: CreateSpec::default() };
-        let a = access_for_job(&Job { request: req.clone(), stage: Some("/home/u/.67zip-x".into()) });
+        let req = Request::Create {
+            output: "/home/u/out.7z".into(),
+            inputs: vec!["/home/u/doc".into()],
+            spec: CreateSpec::default(),
+        };
+        let a = access_for_job(&Job {
+            request: req.clone(),
+            stage: Some("/home/u/.67zip-x".into()),
+        });
         assert_eq!(a.write, vec![PathBuf::from("/home/u/.67zip-x")]);
         assert_eq!(a.read, vec![PathBuf::from("/home/u/doc")]);
-        let a = access_for_job(&Job { request: req, stage: None });
+        let a = access_for_job(&Job {
+            request: req,
+            stage: None,
+        });
         assert_eq!(a.write, vec![PathBuf::from("/home/u")]);
     }
 }

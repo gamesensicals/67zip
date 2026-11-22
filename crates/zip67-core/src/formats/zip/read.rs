@@ -4,8 +4,8 @@
 
 use std::io::{BufReader, Read, Seek, SeekFrom};
 
-use super::crypto::{aes_salt_len, zipcrypto_open, AesZipReader, ZipCryptoReader};
-use crate::archive::{is_entry_local, ArchiveInfo, ArchiveReader, EntryVisitor, OpenOptions};
+use super::crypto::{AesZipReader, ZipCryptoReader, aes_salt_len, zipcrypto_open};
+use crate::archive::{ArchiveInfo, ArchiveReader, EntryVisitor, OpenOptions, is_entry_local};
 use crate::codecs;
 use crate::detect::ArchiveType;
 use crate::entry::{Entry, EntryKind};
@@ -14,7 +14,7 @@ use crate::io::{CrcCheck, Progressed, ReadSeek, SizeGuard, TakeExact};
 use crate::limits::Limits;
 use crate::password::Password;
 use crate::progress::Progress;
-use crate::util::{decode_name, dos_to_unix, filetime_to_unix, normalize_path, Bytes};
+use crate::util::{Bytes, decode_name, dos_to_unix, filetime_to_unix, normalize_path};
 
 const EOCD_SIG: &[u8; 4] = b"PK\x05\x06";
 const CD_SIG: u32 = 0x0201_4b50;
@@ -138,7 +138,16 @@ pub fn find_eocd(src: &mut dyn ReadSeek) -> Result<Eocd> {
             }
         }
     }
-    Ok(Eocd { record_pos, entries, cd_size, cd_offset, comment, cd_end, disk, cd_disk })
+    Ok(Eocd {
+        record_pos,
+        entries,
+        cd_size,
+        cd_offset,
+        comment,
+        cd_end,
+        disk,
+        cd_disk,
+    })
 }
 
 #[derive(Clone, Debug)]
@@ -192,10 +201,17 @@ impl ZipReader {
             )));
         }
         // Where the CD really is tells us how many bytes were prepended.
-        let real_cd_start = eocd.cd_end.checked_sub(eocd.cd_size).ok_or_else(|| Error::corrupt("bad central directory size"))?;
-        let base = real_cd_start.checked_sub(eocd.cd_offset).ok_or_else(|| Error::corrupt("bad central directory offset"))?;
+        let real_cd_start = eocd
+            .cd_end
+            .checked_sub(eocd.cd_size)
+            .ok_or_else(|| Error::corrupt("bad central directory size"))?;
+        let base = real_cd_start
+            .checked_sub(eocd.cd_offset)
+            .ok_or_else(|| Error::corrupt("bad central directory offset"))?;
         if base > 0 && opts.volume_offsets.is_empty() {
-            warnings.push(format!("{base} bytes of data before the zip archive (self-extracting stub?)"));
+            warnings.push(format!(
+                "{base} bytes of data before the zip archive (self-extracting stub?)"
+            ));
         }
         src.seek(SeekFrom::Start(real_cd_start))?;
         let mut cd = vec![0u8; eocd.cd_size as usize];
@@ -331,7 +347,10 @@ impl ZipReader {
             let mut method_str = method_name(real_method);
             if encrypted {
                 method_str = match aes {
-                    Some((s, _, _)) => format!("AES-{} {method_str}", [0, 128, 192, 256].get(s as usize).copied().unwrap_or(0)),
+                    Some((s, _, _)) => format!(
+                        "AES-{} {method_str}",
+                        [0, 128, 192, 256].get(s as usize).copied().unwrap_or(0)
+                    ),
                     None => format!("ZipCrypto {method_str}"),
                 };
             }
@@ -342,7 +361,11 @@ impl ZipReader {
             entry.mtime = mtime;
             entry.mtime_nanos = nanos;
             entry.mode = if unix { Some(mode & 0o7777) } else { None };
-            entry.crc32 = if aes.is_some_and(|a| a.2 == 2) { None } else { Some(crc) };
+            entry.crc32 = if aes.is_some_and(|a| a.2 == 2) {
+                None
+            } else {
+                Some(crc)
+            };
             entry.encrypted = encrypted;
             entry.method = Some(method_str);
             if !comment.is_empty() {
@@ -354,10 +377,21 @@ impl ZipReader {
             let abs_offset = if vols.is_empty() {
                 base.checked_add(local_offset)
             } else {
-                vols.get(disk_start as usize).and_then(|v| v.checked_add(local_offset))
+                vols.get(disk_start as usize)
+                    .and_then(|v| v.checked_add(local_offset))
             }
             .ok_or_else(|| Error::corrupt("entry refers to a missing part"))?;
-            metas.push(Meta { method, flags, crc, csize, usize, local_offset: abs_offset, dos_time, aes, limit: 0 });
+            metas.push(Meta {
+                method,
+                flags,
+                crc,
+                csize,
+                usize,
+                local_offset: abs_offset,
+                dos_time,
+                aes,
+                limit: 0,
+            });
         }
 
         // Each entry's data must end before the next local header starts.
@@ -365,16 +399,25 @@ impl ZipReader {
         let mut order: Vec<usize> = (0..metas.len()).collect();
         order.sort_by_key(|&i| metas[i].local_offset);
         for w in order.windows(2) {
-            if metas[w[0]].local_offset == metas[w[1]].local_offset && metas[w[0]].csize + metas[w[1]].csize > 0 {
+            if metas[w[0]].local_offset == metas[w[1]].local_offset
+                && metas[w[0]].csize + metas[w[1]].csize > 0
+            {
                 return Err(Error::limit("entries share the same data (zip bomb)"));
             }
         }
         for (k, &i) in order.iter().enumerate() {
-            let next = order.get(k + 1).map(|&j| metas[j].local_offset).unwrap_or(real_cd_start);
+            let next = order
+                .get(k + 1)
+                .map(|&j| metas[j].local_offset)
+                .unwrap_or(real_cd_start);
             metas[i].limit = next;
         }
 
-        let comment = if eocd.comment.is_empty() { None } else { Some(decode_name(&eocd.comment)) };
+        let comment = if eocd.comment.is_empty() {
+            None
+        } else {
+            Some(decode_name(&eocd.comment))
+        };
         Ok(ZipReader {
             src,
             size,
@@ -412,7 +455,9 @@ impl ZipReader {
         let name_len = b.u16()? as u64;
         let extra_len = b.u16()? as u64;
         let data_start = local + 30 + name_len + extra_len;
-        let data_end = data_start.checked_add(meta.csize).ok_or_else(|| Error::corrupt("size overflow"))?;
+        let data_end = data_start
+            .checked_add(meta.csize)
+            .ok_or_else(|| Error::corrupt("size overflow"))?;
         if data_end > file_size {
             return Err(Error::corrupt("entry data runs past the end of the file"));
         }
@@ -431,13 +476,20 @@ impl ZipReader {
             if let Some((strength, real, _)) = meta.aes {
                 method = real;
                 let overhead = aes_salt_len(strength)? as u64 + 2 + 10;
-                let len = meta.csize.checked_sub(overhead).ok_or_else(|| Error::corrupt("AES entry too small"))?;
+                let len = meta
+                    .csize
+                    .checked_sub(overhead)
+                    .ok_or_else(|| Error::corrupt("AES entry too small"))?;
                 Box::new(AesZipReader::open(raw, pw, strength, len)?)
             } else {
                 let mut raw = raw;
                 let mut hdr = [0u8; 12];
                 raw.read_exact(&mut hdr)?;
-                let check = if meta.flags & 8 != 0 { (meta.dos_time >> 8) as u8 } else { (meta.crc >> 24) as u8 };
+                let check = if meta.flags & 8 != 0 {
+                    (meta.dos_time >> 8) as u8
+                } else {
+                    (meta.crc >> 24) as u8
+                };
                 let keys = zipcrypto_open(pw, &hdr, check)?;
                 Box::new(ZipCryptoReader { inner: raw, keys })
             }
@@ -447,7 +499,9 @@ impl ZipReader {
 
         let decoded: Box<dyn Read + Send + 'a> = match method {
             M_STORE => decrypted,
-            M_DEFLATE => Box::new(codecs::deflate::InflateReader::new(BufReader::with_capacity(64 * 1024, decrypted))),
+            M_DEFLATE => Box::new(codecs::deflate::InflateReader::new(
+                BufReader::with_capacity(64 * 1024, decrypted),
+            )),
             M_BZIP2 => Box::new(codecs::bz2::BzDecoder::new(decrypted, 1)),
             M_LZMA => {
                 let mut r = decrypted;
@@ -462,13 +516,26 @@ impl ZipReader {
                     return Err(Error::limit("LZMA dictionary too large"));
                 }
                 let dict = dict.min(meta.usize.max(4096).min(u32::MAX as u64) as u32);
-                let size = if meta.flags & 2 != 0 { u64::MAX } else { meta.usize };
+                let size = if meta.flags & 2 != 0 {
+                    u64::MAX
+                } else {
+                    meta.usize
+                };
                 Box::new(
-                    lzma_rust2::LzmaReader::new_with_props(BufReader::new(r), size, hdr[4], dict, None)
-                        .map_err(|e| Error::corrupt(format!("lzma: {e}")))?,
+                    lzma_rust2::LzmaReader::new_with_props(
+                        BufReader::new(r),
+                        size,
+                        hdr[4],
+                        dict,
+                        None,
+                    )
+                    .map_err(|e| Error::corrupt(format!("lzma: {e}")))?,
                 )
             }
-            M_ZSTD => Box::new(codecs::zstd::ZstdReader::new(BufReader::new(decrypted), limits.max_decoder_memory)),
+            M_ZSTD => Box::new(codecs::zstd::ZstdReader::new(
+                BufReader::new(decrypted),
+                limits.max_decoder_memory,
+            )),
             M_XZ => Box::new(lzma_rust2::XzReader::new(BufReader::new(decrypted), true)),
             M_PPMD => {
                 let mut r = decrypted;
@@ -477,7 +544,11 @@ impl ZipReader {
                 let v = u16::from_le_bytes(p);
                 let order = u32::from(v & 0xf) + 1;
                 let mem = (u32::from((v >> 4) & 0xff) + 1) << 20;
-                let restore = if v >> 12 == 0 { ppmd_rust::RestoreMethod::Restart } else { ppmd_rust::RestoreMethod::CutOff };
+                let restore = if v >> 12 == 0 {
+                    ppmd_rust::RestoreMethod::Restart
+                } else {
+                    ppmd_rust::RestoreMethod::CutOff
+                };
                 if u64::from(mem) > limits.max_decoder_memory {
                     return Err(Error::limit("PPMd model too large"));
                 }
@@ -487,7 +558,11 @@ impl ZipReader {
                 )
             }
             M_DEFLATE64 => return Err(Error::unsupported("Deflate64 compression")),
-            other => return Err(Error::unsupported(format!("zip compression method {other}"))),
+            other => {
+                return Err(Error::unsupported(format!(
+                    "zip compression method {other}"
+                )));
+            }
         };
         let guarded = SizeGuard::new(decoded, Some(meta.usize), limits.max_total_size);
         Ok(Box::new(CrcCheck::new(guarded, entry.crc32, &entry.path)))
@@ -502,7 +577,11 @@ impl ArchiveReader for ZipReader {
         &self.entries
     }
     fn info(&self) -> ArchiveInfo {
-        let mut methods: Vec<String> = self.entries.iter().filter_map(|e| e.method.clone()).collect();
+        let mut methods: Vec<String> = self
+            .entries
+            .iter()
+            .filter_map(|e| e.method.clone())
+            .collect();
         methods.sort();
         methods.dedup();
         ArchiveInfo {
@@ -522,8 +601,15 @@ impl ArchiveReader for ZipReader {
         }
     }
 
-    fn extract(&mut self, selected: &dyn Fn(&Entry) -> bool, visitor: &mut dyn EntryVisitor, progress: &Progress) -> Result<()> {
-        let mut order: Vec<usize> = (0..self.entries.len()).filter(|&i| selected(&self.entries[i])).collect();
+    fn extract(
+        &mut self,
+        selected: &dyn Fn(&Entry) -> bool,
+        visitor: &mut dyn EntryVisitor,
+        progress: &Progress,
+    ) -> Result<()> {
+        let mut order: Vec<usize> = (0..self.entries.len())
+            .filter(|&i| selected(&self.entries[i]))
+            .collect();
         order.sort_by_key(|&i| self.metas[i].local_offset);
         for i in order {
             progress.check()?;
@@ -533,14 +619,24 @@ impl ArchiveReader for ZipReader {
                 EntryKind::Dir => visitor.dir(entry),
                 EntryKind::Special | EntryKind::Hardlink => Ok(()),
                 EntryKind::File | EntryKind::Symlink => {
-                    match Self::entry_reader(self.src.as_mut(), self.base, self.size, &self.metas[i], entry, self.password.as_ref(), &self.limits) {
+                    match Self::entry_reader(
+                        self.src.as_mut(),
+                        self.base,
+                        self.size,
+                        &self.metas[i],
+                        entry,
+                        self.password.as_ref(),
+                        &self.limits,
+                    ) {
                         Err(e) => Err(e),
                         Ok(r) => {
                             if entry.kind == EntryKind::Symlink {
                                 let mut target = Vec::new();
                                 match r.take(4097).read_to_end(&mut target) {
                                     Err(e) => Err(e.into()),
-                                    Ok(_) if target.len() > 4096 => Err(Error::corrupt("symlink target too long")),
+                                    Ok(_) if target.len() > 4096 => {
+                                        Err(Error::corrupt("symlink target too long"))
+                                    }
                                     Ok(n) => {
                                         progress.add_done(n as u64);
                                         visitor.symlink(entry, &String::from_utf8_lossy(&target))

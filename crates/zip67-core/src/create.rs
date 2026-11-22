@@ -80,8 +80,22 @@ impl Method {
     /// Methods offered for an archive type, default first.
     pub fn for_type(t: ArchiveType) -> &'static [Method] {
         match t.container {
-            Container::SevenZ => &[Method::Lzma2, Method::Lzma, Method::Ppmd, Method::Bzip2, Method::Deflate, Method::Copy],
-            Container::Zip => &[Method::Deflate, Method::Bzip2, Method::Lzma, Method::Zstd, Method::Xz, Method::Copy],
+            Container::SevenZ => &[
+                Method::Lzma2,
+                Method::Lzma,
+                Method::Ppmd,
+                Method::Bzip2,
+                Method::Deflate,
+                Method::Copy,
+            ],
+            Container::Zip => &[
+                Method::Deflate,
+                Method::Bzip2,
+                Method::Lzma,
+                Method::Zstd,
+                Method::Xz,
+                Method::Copy,
+            ],
             _ => &[],
         }
     }
@@ -228,7 +242,9 @@ pub fn collect_items(
     skip: Option<&Path>,
     warnings: &mut Vec<String>,
 ) -> Result<Vec<Item>> {
-    let skip_id = skip.and_then(|p| fs::metadata(p).ok()).map(|m| (m.dev(), m.ino()));
+    let skip_id = skip
+        .and_then(|p| fs::metadata(p).ok())
+        .map(|m| (m.dev(), m.ino()));
     let mut items = Vec::new();
     let prefix = arc_dir.trim_matches('/');
     for input in inputs {
@@ -236,10 +252,27 @@ pub fn collect_items(
             .file_name()
             .and_then(|n| n.to_str())
             .map(str::to_string)
-            .or_else(|| fs::canonicalize(input).ok().and_then(|p| p.file_name().map(|n| n.to_string_lossy().into_owned())))
+            .or_else(|| {
+                fs::canonicalize(input)
+                    .ok()
+                    .and_then(|p| p.file_name().map(|n| n.to_string_lossy().into_owned()))
+            })
             .ok_or_else(|| Error::invalid(format!("cannot use {} as input", input.display())))?;
-        let arc = if prefix.is_empty() { name } else { format!("{prefix}/{name}") };
-        walk(input, arc, follow_symlinks, exclude, skip_id, &mut items, warnings, 0)?;
+        let arc = if prefix.is_empty() {
+            name
+        } else {
+            format!("{prefix}/{name}")
+        };
+        walk(
+            input,
+            arc,
+            follow_symlinks,
+            exclude,
+            skip_id,
+            &mut items,
+            warnings,
+            0,
+        )?;
     }
     Ok(items)
 }
@@ -256,7 +289,10 @@ fn walk(
     depth: usize,
 ) -> Result<()> {
     if depth > 512 {
-        warnings.push(format!("{}: folder nesting too deep, skipped", path.display()));
+        warnings.push(format!(
+            "{}: folder nesting too deep, skipped",
+            path.display()
+        ));
         return Ok(());
     }
     let name = arcname.rsplit('/').next().unwrap_or(&arcname);
@@ -285,7 +321,16 @@ fn walk(
         children.sort_by_key(|e| e.file_name());
         for c in children {
             let cname = c.file_name().to_string_lossy().into_owned();
-            walk(&c.path(), format!("{arcname}/{cname}"), follow, exclude, skip_id, items, warnings, depth + 1)?;
+            walk(
+                &c.path(),
+                format!("{arcname}/{cname}"),
+                follow,
+                exclude,
+                skip_id,
+                items,
+                warnings,
+                depth + 1,
+            )?;
         }
     } else if ft.is_file() {
         items.push(item_from_meta(path, arcname, &md, None));
@@ -296,10 +341,17 @@ fn walk(
 }
 
 /// Creates the format writer for `opts` writing into `file`.
-pub fn new_writer(file: File, opts: &CreateOptions, single_name: Option<&str>) -> Result<Box<dyn ArchiveWriter>> {
+pub fn new_writer(
+    file: File,
+    opts: &CreateOptions,
+    single_name: Option<&str>,
+) -> Result<Box<dyn ArchiveWriter>> {
     let t = opts.archive_type;
     if opts.password.is_some() && !t.supports_encryption() {
-        return Err(Error::invalid(format!("{} archives cannot be encrypted; use 7z or zip", t.display_name())));
+        return Err(Error::invalid(format!(
+            "{} archives cannot be encrypted; use 7z or zip",
+            t.display_name()
+        )));
     }
     let threads = opts.threads.max(1);
     Ok(match t.container {
@@ -310,8 +362,21 @@ pub fn new_writer(file: File, opts: &CreateOptions, single_name: Option<&str>) -
             threads,
             opts.password.clone(),
         )?),
-        Container::Tar => Box::new(crate::formats::tar::TarWriter::new(file, t.compression, opts.level, threads, opts.size_hint)?),
-        Container::Raw => Box::new(crate::formats::raw::RawWriter::new(file, t.compression, opts.level, threads, single_name, opts.size_hint)?),
+        Container::Tar => Box::new(crate::formats::tar::TarWriter::new(
+            file,
+            t.compression,
+            opts.level,
+            threads,
+            opts.size_hint,
+        )?),
+        Container::Raw => Box::new(crate::formats::raw::RawWriter::new(
+            file,
+            t.compression,
+            opts.level,
+            threads,
+            single_name,
+            opts.size_hint,
+        )?),
         Container::SevenZ => Box::new(crate::formats::sevenz::SevenZWriter::new(file, opts)?),
         Container::Iso => return Err(Error::invalid("ISO images can only be read")),
         Container::Rar => return Err(Error::invalid("RAR archives can only be read")),
@@ -327,14 +392,31 @@ pub struct AtomicOutput {
 
 impl AtomicOutput {
     pub fn new(target: &Path) -> Result<(Self, File)> {
-        let dir = target.parent().filter(|p| !p.as_os_str().is_empty()).unwrap_or(Path::new("."));
-        let name = target.file_name().and_then(|n| n.to_str()).unwrap_or("archive");
+        let dir = target
+            .parent()
+            .filter(|p| !p.as_os_str().is_empty())
+            .unwrap_or(Path::new("."));
+        let name = target
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("archive");
         let mut rnd = [0u8; 6];
         getrandom::fill(&mut rnd).map_err(|_| Error::invalid("no random source"))?;
         let suffix: String = rnd.iter().map(|b| format!("{b:02x}")).collect();
         let tmp = dir.join(format!(".{name}.{suffix}.67tmp"));
-        let f = fs::OpenOptions::new().write(true).read(true).create_new(true).open(&tmp)?;
-        Ok((AtomicOutput { tmp, target: target.to_path_buf(), done: false }, f))
+        let f = fs::OpenOptions::new()
+            .write(true)
+            .read(true)
+            .create_new(true)
+            .open(&tmp)?;
+        Ok((
+            AtomicOutput {
+                tmp,
+                target: target.to_path_buf(),
+                done: false,
+            },
+            f,
+        ))
     }
     pub fn commit(mut self) -> Result<()> {
         fs::rename(&self.tmp, &self.target)?;
@@ -352,13 +434,21 @@ impl Drop for AtomicOutput {
 }
 
 /// Writes `items` (already collected) with `writer`, reading file data.
-pub fn write_items(writer: &mut dyn ArchiveWriter, items: &[Item], progress: &Progress, report: &mut CreateReport) -> Result<()> {
+pub fn write_items(
+    writer: &mut dyn ArchiveWriter,
+    items: &[Item],
+    progress: &Progress,
+    report: &mut CreateReport,
+) -> Result<()> {
     for item in items {
         progress.check()?;
         progress.set_current(&item.arcname);
         match item.kind {
             EntryKind::File => {
-                let src = item.source.as_ref().ok_or_else(|| Error::invalid("missing source"))?;
+                let src = item
+                    .source
+                    .as_ref()
+                    .ok_or_else(|| Error::invalid("missing source"))?;
                 let f = match File::open(src) {
                     Ok(f) => f,
                     Err(e) => {
@@ -389,12 +479,27 @@ pub fn write_items(writer: &mut dyn ArchiveWriter, items: &[Item], progress: &Pr
 
 /// Creates a new archive at `output` from `inputs`. Fails if `output`
 /// exists (use [`crate::update::add_files`] to add to an archive).
-pub fn create(output: &Path, inputs: &[PathBuf], opts: &CreateOptions, progress: &Progress) -> Result<CreateReport> {
+pub fn create(
+    output: &Path,
+    inputs: &[PathBuf],
+    opts: &CreateOptions,
+    progress: &Progress,
+) -> Result<CreateReport> {
     if output.exists() {
-        return Err(Error::invalid(format!("{} already exists", output.display())));
+        return Err(Error::invalid(format!(
+            "{} already exists",
+            output.display()
+        )));
     }
     let mut report = CreateReport::default();
-    let items = collect_items(inputs, "", opts.follow_symlinks, &opts.exclude, Some(output), &mut report.warnings)?;
+    let items = collect_items(
+        inputs,
+        "",
+        opts.follow_symlinks,
+        &opts.exclude,
+        Some(output),
+        &mut report.warnings,
+    )?;
     if !opts.archive_type.holds_many_files() {
         let files: Vec<&Item> = items.iter().filter(|i| i.kind == EntryKind::File).collect();
         if files.len() != 1 || items.len() != 1 {
@@ -411,7 +516,10 @@ pub fn create(output: &Path, inputs: &[PathBuf], opts: &CreateOptions, progress:
     let target = staged_path(output, opts.out_dir.as_deref());
     let (out, file) = AtomicOutput::new(&target)?;
     let single = items.first().map(|i| i.arcname.clone());
-    let opts = CreateOptions { size_hint: opts.size_hint.or(Some(total)), ..opts.clone() };
+    let opts = CreateOptions {
+        size_hint: opts.size_hint.or(Some(total)),
+        ..opts.clone()
+    };
     let mut writer = new_writer(file, &opts, single.as_deref())?;
     write_items(writer.as_mut(), &items, progress, &mut report)?;
     writer.finish(progress)?;
@@ -446,9 +554,14 @@ pub fn delete_one(src: &Path, shred: bool, seen: &mut Vec<String>) -> Vec<String
         }
         return w;
     }
-    let why = src.parent().filter(|p| !p.as_os_str().is_empty()).and_then(crate::shred::reliability);
+    let why = src
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .and_then(crate::shred::reliability);
     match crate::shred::shred_file(src) {
-        Ok(crate::shred::Shredded::Kept(reason)) => w.push(format!("{} not deleted: {reason}", src.display())),
+        Ok(crate::shred::Shredded::Kept(reason)) => {
+            w.push(format!("{} not deleted: {reason}", src.display()))
+        }
         Ok(_) => {}
         Err(e) => w.push(format!("could not securely delete {}: {e}", src.display())),
     }
@@ -470,8 +583,15 @@ pub fn staged_path(output: &Path, out_dir: Option<&Path>) -> PathBuf {
 }
 
 fn sources_to_delete(items: &[Item]) -> Vec<PathBuf> {
-    let files = items.iter().filter(|i| i.kind != EntryKind::Dir).filter_map(|i| i.source.clone());
-    let dirs = items.iter().rev().filter(|i| i.kind == EntryKind::Dir).filter_map(|i| i.source.clone());
+    let files = items
+        .iter()
+        .filter(|i| i.kind != EntryKind::Dir)
+        .filter_map(|i| i.source.clone());
+    let dirs = items
+        .iter()
+        .rev()
+        .filter(|i| i.kind == EntryKind::Dir)
+        .filter_map(|i| i.source.clone());
     files.chain(dirs).collect()
 }
 

@@ -100,7 +100,11 @@ fn cp437(b: u8) -> char {
         '∞', 'φ', 'ε', '∩', '≡', '±', '≥', '≤', '⌠', '⌡', '÷', '≈', '°', '∙', '·', '√', 'ⁿ', '²',
         '■', '\u{a0}',
     ];
-    if b < 0x80 { b as char } else { HIGH[(b - 0x80) as usize] }
+    if b < 0x80 {
+        b as char
+    } else {
+        HIGH[(b - 0x80) as usize]
+    }
 }
 
 /// MS-DOS date/time (local time) to Unix seconds.
@@ -119,7 +123,9 @@ pub fn dos_to_unix(date: u16, time: u16) -> Option<i64> {
 /// Unix seconds to MS-DOS (date, time) in local time, clamped to 1980..2107.
 pub fn unix_to_dos(secs: i64) -> (u16, u16) {
     let fallback = ((1 << 5) | 1, 0); // 1980-01-01 00:00
-    let Ok(ts) = jiff::Timestamp::from_second(secs) else { return fallback };
+    let Ok(ts) = jiff::Timestamp::from_second(secs) else {
+        return fallback;
+    };
     let z = ts.to_zoned_datetime(jiff::tz::TimeZone::system());
     let year = z.year();
     if year < 1980 {
@@ -145,7 +151,8 @@ pub fn filetime_to_unix(ft: u64) -> (i64, u32) {
 pub fn unix_to_filetime(secs: i64, nanos: u32) -> u64 {
     const EPOCH_DIFF: i64 = 11_644_473_600;
     let s = secs.saturating_add(EPOCH_DIFF).max(0) as u64;
-    s.saturating_mul(10_000_000).saturating_add(u64::from(nanos / 100))
+    s.saturating_mul(10_000_000)
+        .saturating_add(u64::from(nanos / 100))
 }
 
 /// Human readable size, e.g. `12.3 MiB`.
@@ -178,7 +185,10 @@ pub fn random_hex(n: usize) -> String {
 }
 
 pub fn default_threads() -> usize {
-    std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1).clamp(1, 256)
+    std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(1)
+        .clamp(1, 256)
 }
 
 #[cfg(test)]
@@ -210,7 +220,10 @@ mod tests {
 /// Local date and time, `YYYY-MM-DD HH:MM:SS`.
 pub fn format_local_time(secs: i64) -> String {
     match jiff::Timestamp::from_second(secs) {
-        Ok(ts) => ts.to_zoned_datetime(jiff::tz::TimeZone::system()).strftime("%Y-%m-%d %H:%M:%S").to_string(),
+        Ok(ts) => ts
+            .to_zoned_datetime(jiff::tz::TimeZone::system())
+            .strftime("%Y-%m-%d %H:%M:%S")
+            .to_string(),
         Err(_) => String::from("                   "),
     }
 }

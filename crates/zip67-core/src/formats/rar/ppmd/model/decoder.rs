@@ -2,7 +2,10 @@ use super::super::{ByteSource, SYM_END, SYM_ERROR};
 use super::*;
 
 impl<RC: Ppmd7RangeDecoder> PPMd7<RC> {
-    pub(crate) fn decode_symbol(&mut self, src: &mut dyn ByteSource) -> Result<i32, std::io::Error> {
+    pub(crate) fn decode_symbol(
+        &mut self,
+        src: &mut dyn ByteSource,
+    ) -> Result<i32, std::io::Error> {
         let mut char_mask: [u8; 256];
 
         let num_stats = self.mem.num_stats(self.min_context);
@@ -33,7 +36,11 @@ impl<RC: Ppmd7RangeDecoder> PPMd7<RC> {
                 let freq = *freq as u32;
                 count = count.wrapping_sub(freq);
                 if (count as i32) < 0 {
-                    self.rc.decode_final(src, hi_cnt.wrapping_sub(count).wrapping_sub(freq), freq)?;
+                    self.rc.decode_final(
+                        src,
+                        hi_cnt.wrapping_sub(count).wrapping_sub(freq),
+                        freq,
+                    )?;
                     self.found_state = s;
                     let sym = *sym;
                     self.update1();
@@ -100,7 +107,11 @@ impl<RC: Ppmd7RangeDecoder> PPMd7<RC> {
             self.min_context = mc;
 
             let mut hi_cnt = 0;
-            for state in self.mem.states(stats, num_stats).chunks_exact(STATE_SIZE as usize) {
+            for state in self
+                .mem
+                .states(stats, num_stats)
+                .chunks_exact(STATE_SIZE as usize)
+            {
                 hi_cnt += (state[1] & char_mask[state[0] as usize]) as u32;
             }
 
@@ -125,7 +136,8 @@ impl<RC: Ppmd7RangeDecoder> PPMd7<RC> {
                     rest = tail;
                 }
 
-                self.rc.decode_final(src, hi_cnt.wrapping_sub(count).wrapping_sub(freq), freq)?;
+                self.rc
+                    .decode_final(src, hi_cnt.wrapping_sub(count).wrapping_sub(freq), freq)?;
 
                 let see = self.get_see(see_source);
                 see.update();

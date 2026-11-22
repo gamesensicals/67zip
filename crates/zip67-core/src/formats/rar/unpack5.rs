@@ -37,7 +37,15 @@ fn bad(msg: &str) -> Error {
 
 impl Unpack5 {
     pub fn new() -> Self {
-        Unpack5 { tables: None, old_dist: [u64::MAX; 4], last_len: 0, block_end: 0, last_block: false, started: false, finished: false }
+        Unpack5 {
+            tables: None,
+            old_dist: [u64::MAX; 4],
+            last_len: 0,
+            block_end: 0,
+            last_block: false,
+            started: false,
+            finished: false,
+        }
     }
 
     /// Prepares for the next file; a non-solid file forgets all state.
@@ -85,7 +93,12 @@ impl Unpack5 {
         if !read_lengths(inp, &bd, &mut lens, None) || inp.overrun() {
             return Err(bad("bad Huffman tables"));
         }
-        let t = self.tables.get_or_insert_with(|| Tables { ld: Huffman::empty(), dd: Huffman::empty(), ldd: Huffman::empty(), rd: Huffman::empty() });
+        let t = self.tables.get_or_insert_with(|| Tables {
+            ld: Huffman::empty(),
+            dd: Huffman::empty(),
+            ldd: Huffman::empty(),
+            rd: Huffman::empty(),
+        });
         t.ld.build(&lens[..NC]);
         t.dd.build(&lens[NC..NC + DC]);
         t.ldd.build(&lens[NC + DC..NC + DC + LDC]);
@@ -134,13 +147,19 @@ impl Unpack5 {
             len = 0;
         }
         let op = match inp.bits(3) {
-            0 => FilterOp::Delta5 { channels: inp.bits(5) + 1 },
+            0 => FilterOp::Delta5 {
+                channels: inp.bits(5) + 1,
+            },
             1 => FilterOp::E85 { e9: false },
             2 => FilterOp::E85 { e9: true },
             3 => FilterOp::Arm5,
             _ => return Err(bad("unknown filter")),
         };
-        win.add_filter(Filter { start: win.pos + start, len, op })
+        win.add_filter(Filter {
+            start: win.pos + start,
+            len,
+            op,
+        })
     }
 
     /// Decodes until the window has no more room, `budget` bytes were
@@ -154,7 +173,9 @@ impl Unpack5 {
             self.next_block(inp)?;
         }
         let stop = win.pos + budget.min(win.space());
-        let Some(_) = self.tables.as_ref() else { return Err(bad("no tables")) };
+        let Some(_) = self.tables.as_ref() else {
+            return Err(bad("no tables"));
+        };
         while win.pos < stop {
             inp.ensure(32);
             while inp.bit_pos() >= self.block_end {

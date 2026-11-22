@@ -6,6 +6,8 @@ use zip67_core::extract::Overwrite;
 
 #[derive(Debug, Default)]
 pub struct Args {
+    /// Things worth telling the user about the switches they gave (printed to stderr).
+    pub notes: Vec<String>,
     pub command: String,
     pub archive: Option<PathBuf>,
     pub files: Vec<String>,
@@ -74,7 +76,15 @@ fn method_switch(a: &mut Args, s: &str) -> Result<(), String> {
         }
         "s" => a.solid = Some(on_off(&v)?),
         "he" => a.encrypt_names = on_off(&v)?,
-        "hc" | "f" | "tc" | "ta" | "tm" | "qs" | "fb" | "pass" | "mf" | "em" | "cu" | "cl" => {} // accepted, defaults used
+        "em" => match v.to_ascii_lowercase().replace('-', "").as_str() {
+            "aes256" => {}
+            "aes128" | "aes192" => a.notes.push(format!("-mem={v}: zips are always encrypted with AES-256, the strongest option.")),
+            "zipcrypto" => a.notes.push(
+                "-mem=ZipCrypto: 67z doesn't create ZipCrypto zips because that old encryption is easy to break; using AES-256 (7-Zip and 67zip open it, Windows Explorer can't).".into(),
+            ),
+            other => return Err(format!("unknown encryption method '-mem={other}' (zips use AES256)")),
+        },
+        "hc" | "f" | "tc" | "ta" | "tm" | "qs" | "fb" | "pass" | "mf" | "cu" | "cl" => {} // accepted, defaults used
         other => return Err(format!("unknown -m switch '-m{other}'")),
     }
     Ok(())
@@ -115,7 +125,11 @@ pub fn parse(raw: Vec<String>) -> Result<Args, String> {
         } else if let Some(m) = s.strip_prefix('m') {
             method_switch(&mut a, m)?;
         } else if let Some(p) = s.strip_prefix('p') {
-            a.password = Some(if p.is_empty() { None } else { Some(p.to_string()) });
+            a.password = Some(if p.is_empty() {
+                None
+            } else {
+                Some(p.to_string())
+            });
         } else if let Some(o) = s.strip_prefix('o') {
             if o.is_empty() {
                 return Err("-o needs a folder, written without a space: -o/path/to/folder".into());
@@ -136,7 +150,11 @@ pub fn parse(raw: Vec<String>) -> Result<Args, String> {
         } else if let Some(x) = s.strip_prefix("xr!").or_else(|| s.strip_prefix("x!")) {
             a.exclude.push(x.to_string());
         } else if let Some(h) = lower.strip_prefix("scrc") {
-            a.hashes.push(if h.is_empty() { "crc32".into() } else { h.to_string() });
+            a.hashes.push(if h.is_empty() {
+                "crc32".into()
+            } else {
+                h.to_string()
+            });
         } else if lower == "sdel" {
             a.delete_after = true;
         } else if lower == "sshred" {
@@ -144,13 +162,22 @@ pub fn parse(raw: Vec<String>) -> Result<Args, String> {
             a.shred = true;
         } else if lower == "l" {
             a.follow_links = true;
-        } else if lower == "snl" || lower == "r" || lower == "spf" || lower == "ssc" || lower == "ssc-" {
+        } else if lower == "snl"
+            || lower == "r"
+            || lower == "spf"
+            || lower == "ssc"
+            || lower == "ssc-"
+        {
             // Symlinks are stored as links by default; recursion is always on.
         } else if lower == "slt" {
             a.technical = true;
         } else if lower == "bd" {
             a.no_progress = true;
-        } else if lower.starts_with("bb") || lower.starts_with("bs") || lower.starts_with("bt") || lower.starts_with("sc") {
+        } else if lower.starts_with("bb")
+            || lower.starts_with("bs")
+            || lower.starts_with("bt")
+            || lower.starts_with("sc")
+        {
             // output tuning switches of 7z: accepted and ignored
         } else {
             return Err(format!("unknown switch '{arg}'"));

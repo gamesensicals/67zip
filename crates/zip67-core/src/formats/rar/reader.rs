@@ -65,12 +65,19 @@ impl Read for SegReader {
             self.idx += 1;
             self.off = 0;
         }
-        let Some(s) = self.segs.get(self.idx) else { return Ok(0) };
+        let Some(s) = self.segs.get(self.idx) else {
+            return Ok(0);
+        };
         if buf.is_empty() {
             return Ok(0);
         }
-        let n = buf.len().min((s.len - self.off).min(usize::MAX as u64) as usize);
-        let vol = self.vols.get(s.vol).ok_or_else(|| io::Error::other("bad volume"))?;
+        let n = buf
+            .len()
+            .min((s.len - self.off).min(usize::MAX as u64) as usize);
+        let vol = self
+            .vols
+            .get(s.vol)
+            .ok_or_else(|| io::Error::other("bad volume"))?;
         let mut src = vol.lock().map_err(|_| io::Error::other("volume lock"))?;
         src.seek(SeekFrom::Start(s.offset + self.off))?;
         let got = src.read(&mut buf[..n])?;
@@ -121,7 +128,12 @@ impl<R: Read> Read for RarCheck<R> {
                 ok &= got == w;
             }
             if !ok {
-                return Err(if self.unverified { Error::WrongPassword } else { Error::Checksum(self.name.clone()) }.into());
+                return Err(if self.unverified {
+                    Error::WrongPassword
+                } else {
+                    Error::Checksum(self.name.clone())
+                }
+                .into());
             }
             return Ok(0);
         }
@@ -176,11 +188,19 @@ fn clone_err(e: &Error) -> Error {
 fn codec_of(r: &FileRec) -> Result<Codec> {
     match r.version {
         Version::V5 { alg: 0 } => Ok(Codec::Rar5),
-        Version::V5 { .. } => Err(Error::unsupported("RAR 7 compression for dictionaries over 4 GB")),
+        Version::V5 { .. } => Err(Error::unsupported(
+            "RAR 7 compression for dictionaries over 4 GB",
+        )),
         Version::V3 { unp_ver: 29 | 36 } => Ok(Codec::Rar29),
         Version::V3 { unp_ver: 20 | 26 } => Ok(Codec::Rar20),
-        Version::V3 { unp_ver } if unp_ver < 20 => Err(Error::unsupported("RAR 1.5 compression (archives made before 1997)")),
-        Version::V3 { unp_ver } => Err(Error::unsupported(format!("RAR compression version {}.{}", unp_ver / 10, unp_ver % 10))),
+        Version::V3 { unp_ver } if unp_ver < 20 => Err(Error::unsupported(
+            "RAR 1.5 compression (archives made before 1997)",
+        )),
+        Version::V3 { unp_ver } => Err(Error::unsupported(format!(
+            "RAR compression version {}.{}",
+            unp_ver / 10,
+            unp_ver % 10
+        ))),
     }
 }
 
@@ -228,7 +248,14 @@ fn locate(src: &mut dyn ReadSeek, size: u64) -> Result<Vec<(u64, bool)>> {
     Ok(found)
 }
 
-fn read_headers(src: &mut dyn ReadSeek, size: u64, start: u64, is5: bool, opts: &OpenOptions, keys: &mut KeyCache) -> Result<VolumeHeaders> {
+fn read_headers(
+    src: &mut dyn ReadSeek,
+    size: u64,
+    start: u64,
+    is5: bool,
+    opts: &OpenOptions,
+    keys: &mut KeyCache,
+) -> Result<VolumeHeaders> {
     let pw = opts.password.as_ref();
     if is5 {
         rar5::read_volume(src, size, start + 8, pw, keys, opts.limits.max_entries)
@@ -280,7 +307,8 @@ impl RarReader {
                 let n = crate::io::read_full(src.as_mut(), &mut sig)?;
                 let is5 = n == 8 && &sig == rar5::SIGNATURE;
                 if !is5 && !(n >= 7 && &sig[..7] == rar4::SIGNATURE) || is5 != rar5 {
-                    info.problems.push(format!("part {} is not a volume of this archive", vi + 1));
+                    info.problems
+                        .push(format!("part {} is not a volume of this archive", vi + 1));
                     next_missing = true;
                     break;
                 }
@@ -318,7 +346,11 @@ impl RarReader {
                 if rec.name.len() > opts.limits.max_path_len {
                     return Err(Error::limit("entry name too long"));
                 }
-                let seg = Segment { vol: vi, offset: rec.data_offset, len: rec.data_len };
+                let seg = Segment {
+                    vol: vi,
+                    offset: rec.data_offset,
+                    len: rec.data_len,
+                };
                 let cut = rec.truncated && !rec.split_after;
                 if rec.split_before {
                     if let Some(p) = pending.filter(|&p| items[p].rec.name == rec.name) {
@@ -328,13 +360,17 @@ impl RarReader {
                         it.rec.blake2 = rec.blake2;
                         it.rec.split_after = rec.split_after;
                         if cut {
-                            it.missing = Some("the archive ends inside this file's data (incomplete download?)".into());
+                            it.missing = Some(
+                                "the archive ends inside this file's data (incomplete download?)"
+                                    .into(),
+                            );
                         }
                         pending = rec.split_after.then_some(p);
                         continue;
                     }
                     if let Some(p) = pending.take() {
-                        items[p].missing = Some("the rest of this file is missing from the next part".into());
+                        items[p].missing =
+                            Some("the rest of this file is missing from the next part".into());
                     }
                     let after = rec.split_after;
                     items.push(Item { rec, segs: vec![seg], missing: Some("this file starts in an earlier part of the archive, which was not found".into()) });
@@ -342,11 +378,18 @@ impl RarReader {
                     continue;
                 }
                 if let Some(p) = pending.take() {
-                    items[p].missing = Some("the rest of this file is missing from the next part".into());
+                    items[p].missing =
+                        Some("the rest of this file is missing from the next part".into());
                 }
                 let after = rec.split_after;
-                let missing = cut.then(|| "the archive ends inside this file's data (incomplete download?)".to_string());
-                items.push(Item { rec, segs: vec![seg], missing });
+                let missing = cut.then(|| {
+                    "the archive ends inside this file's data (incomplete download?)".to_string()
+                });
+                items.push(Item {
+                    rec,
+                    segs: vec![seg],
+                    missing,
+                });
                 if after {
                     pending = Some(items.len() - 1);
                 }
@@ -362,10 +405,16 @@ impl RarReader {
         }
         info.volumes = vols.len() as u32;
         if let Some(p) = pending {
-            items[p].missing = Some(format!("this file continues in part {} of the archive, which is missing", vols.len() + 1));
+            items[p].missing = Some(format!(
+                "this file continues in part {} of the archive, which is missing",
+                vols.len() + 1
+            ));
         }
         if next_missing && pending.is_none() {
-            info.problems.push(format!("the archive continues in part {}, which is missing", vols.len() + 1));
+            info.problems.push(format!(
+                "the archive continues in part {}, which is missing",
+                vols.len() + 1
+            ));
         }
 
         // Entries, solid streams.
@@ -401,7 +450,9 @@ impl RarReader {
                 Link::Hardlink(_) => EntryKind::Hardlink,
                 Link::Copy(_) => EntryKind::File,
                 Link::None if r.dir => EntryKind::Dir,
-                Link::None if matches!(ftype, 0o010000 | 0o020000 | 0o060000 | 0o140000) => EntryKind::Special,
+                Link::None if matches!(ftype, 0o010000 | 0o020000 | 0o060000 | 0o140000) => {
+                    EntryKind::Special
+                }
                 Link::None => EntryKind::File,
             };
             // Older versions get WinRAR's `name;N`, so they do not collide
@@ -413,7 +464,11 @@ impl RarReader {
             let (path, unsafe_path) = normalize_path(&name);
             let mut e = Entry::new(i, path, kind);
             e.unsafe_path = unsafe_path;
-            e.size = if has_stream(r) || matches!(r.link, Link::Copy(_)) { r.size } else { 0 };
+            e.size = if has_stream(r) || matches!(r.link, Link::Copy(_)) {
+                r.size
+            } else {
+                0
+            };
             e.size_known = r.size_known;
             e.packed_size = Some(crate::util::total_size(it.segs.iter().map(|s| s.len)));
             if let Some((s, ns)) = r.mtime {
@@ -430,7 +485,11 @@ impl RarReader {
                 0o644
             });
             let mac = matches!(r.crypt, Some(Crypt::V5 { mac: true, .. }));
-            e.crc32 = if mac || it.missing.is_some() { None } else { r.crc };
+            e.crc32 = if mac || it.missing.is_some() {
+                None
+            } else {
+                r.crc
+            };
             e.encrypted = r.crypt.is_some();
             e.comment = r.comment.clone();
             e.method = method_text(r);
@@ -453,12 +512,26 @@ impl RarReader {
         info.blocks = next_group as u64;
         info.encrypted_data = items.iter().any(|i| i.rec.crypt.is_some());
         info.format = if rar5 { "RAR5".into() } else { "RAR".into() };
-        let group_window = group_dict.into_iter().map(|(g, (d, total))| (g, window_size(d, total))).collect();
+        let group_window = group_dict
+            .into_iter()
+            .map(|(g, (d, total))| (g, window_size(d, total)))
+            .collect();
 
-        let mut reader =
-            RarReader { vols, items, entries, groups, group_window, password: opts.password.clone(), limits: opts.limits.clone(), keys, info };
+        let mut reader = RarReader {
+            vols,
+            items,
+            entries,
+            groups,
+            group_window,
+            password: opts.password.clone(),
+            limits: opts.limits.clone(),
+            keys,
+            info,
+        };
         for i in 0..reader.items.len() {
-            let Some(c) = reader.items[i].rec.comment_rec.clone() else { continue };
+            let Some(c) = reader.items[i].rec.comment_rec.clone() else {
+                continue;
+            };
             if reader.items[i].segs.len() == 1
                 && let Ok(bytes) = reader.read_comment(*c)
             {
@@ -478,20 +551,37 @@ impl RarReader {
         if !rec.size_known || rec.size > 1 << 20 || rec.crypt.is_some() && self.password.is_none() {
             return Err(Error::unsupported("comment"));
         }
-        let item = Item { segs: vec![Segment { vol: 0, offset: rec.data_offset, len: rec.data_len }], rec, missing: None };
-        let (stream, _, _) = data_stream(&mut self.keys, &self.vols, self.password.as_ref(), &item)?;
+        let item = Item {
+            segs: vec![Segment {
+                vol: 0,
+                offset: rec.data_offset,
+                len: rec.data_len,
+            }],
+            rec,
+            missing: None,
+        };
+        let (stream, _, _) =
+            data_stream(&mut self.keys, &self.vols, self.password.as_ref(), &item)?;
         let mut out = Vec::new();
         if item.rec.method == 0 {
             TakeExact::new(stream, item.rec.size).read_to_end(&mut out)?;
         } else {
             let mut up = Unpacker::new(codec_of(&item.rec)?, self.limits.max_decoder_memory);
-            up.begin(false, window_size(item.rec.dict, Some(item.rec.size)), Some(item.rec.size))?;
+            up.begin(
+                false,
+                window_size(item.rec.dict, Some(item.rec.size)),
+                Some(item.rec.size),
+            )?;
             FileDecoder::new(&mut up, stream, Some(item.rec.size)).read_to_end(&mut out)?;
         }
         // Never show a comment that did not decode correctly (for example
         // with a wrong password).
         if let Some(c) = item.rec.crc
-            && item.rec.crypt.as_ref().is_none_or(|c| !matches!(c, Crypt::V5 { mac: true, .. }))
+            && item
+                .rec
+                .crypt
+                .as_ref()
+                .is_none_or(|c| !matches!(c, Crypt::V5 { mac: true, .. }))
             && crate::crc::crc32(&out) != c
         {
             return Err(Error::Checksum("comment".into()));
@@ -505,15 +595,35 @@ impl RarReader {
 /// Packed data, whether the password was verified, and the MAC key.
 type DataStream = (Box<dyn Read + Send>, bool, Option<Arc<Keys5>>);
 
-fn data_stream(keys: &mut KeyCache, vols: &[SharedSrc], pw: Option<&Password>, item: &Item) -> Result<DataStream> {
-    let seg = SegReader { vols: vols.to_vec(), segs: item.segs.clone(), idx: 0, off: 0 };
-    let Some(crypt) = &item.rec.crypt else { return Ok((Box::new(seg), true, None)) };
+fn data_stream(
+    keys: &mut KeyCache,
+    vols: &[SharedSrc],
+    pw: Option<&Password>,
+    item: &Item,
+) -> Result<DataStream> {
+    let seg = SegReader {
+        vols: vols.to_vec(),
+        segs: item.segs.clone(),
+        idx: 0,
+        off: 0,
+    };
+    let Some(crypt) = &item.rec.crypt else {
+        return Ok((Box::new(seg), true, None));
+    };
     if let Crypt::Unknown(what) = crypt {
         return Err(Error::unsupported(what.clone()));
     }
-    let Some(pw) = pw else { return Err(Error::PasswordRequired) };
+    let Some(pw) = pw else {
+        return Err(Error::PasswordRequired);
+    };
     match crypt {
-        Crypt::V5 { lg2, salt, iv, check, mac } => {
+        Crypt::V5 {
+            lg2,
+            salt,
+            iv,
+            check,
+            mac,
+        } => {
             if *lg2 > crypto::MAX_KDF_LG2 {
                 return Err(Error::unsupported("RAR5 key derivation count too high"));
             }
@@ -525,11 +635,19 @@ fn data_stream(keys: &mut KeyCache, vols: &[SharedSrc], pw: Option<&Password>, i
             };
             let aes = AesKey::new(&k.key[..])?;
             let mac_key = mac.then(|| k.clone());
-            Ok((Box::new(CbcDecryptReader::new(seg, aes, *iv)), verified, mac_key))
+            Ok((
+                Box::new(CbcDecryptReader::new(seg, aes, *iv)),
+                verified,
+                mac_key,
+            ))
         }
         Crypt::V3 { salt } => {
             let (key, iv) = keys.rar3(pw, salt.as_ref());
-            Ok((Box::new(CbcDecryptReader::new(seg, AesKey::new(&key[..])?, iv)), false, None))
+            Ok((
+                Box::new(CbcDecryptReader::new(seg, AesKey::new(&key[..])?, iv)),
+                false,
+                None,
+            ))
         }
         Crypt::Unknown(_) => Err(Error::unsupported("encryption")),
     }
@@ -561,9 +679,17 @@ impl RarReader {
         }
         // An empty file needs no decoder unless a solid stream goes on
         // after it.
-        let later_in_group = self.groups[data].is_some_and(|g| self.groups[data + 1..].contains(&Some(g)));
-        if rec.size_known && rec.size == 0 && !later_in_group && rec.crypt.is_none() && !matches!(rec.link, Link::InData) {
-            let Some(d) = deliver else { return Ok(Done::Ok) };
+        let later_in_group =
+            self.groups[data].is_some_and(|g| self.groups[data + 1..].contains(&Some(g)));
+        if rec.size_known
+            && rec.size == 0
+            && !later_in_group
+            && rec.crypt.is_none()
+            && !matches!(rec.link, Link::InData)
+        {
+            let Some(d) = deliver else {
+                return Ok(Done::Ok);
+            };
             let mut empty: &[u8] = &[];
             return match visitor.file(&self.entries[d], &mut empty) {
                 Ok(()) => Ok(Done::Ok),
@@ -571,19 +697,28 @@ impl RarReader {
                 Err(e) => Ok(Done::Entry(e)),
             };
         }
-        let codec = if rec.method == 0 { None } else { Some(codec_of(rec)?) };
+        let codec = if rec.method == 0 {
+            None
+        } else {
+            Some(codec_of(rec)?)
+        };
         if rec.size_known && rec.size > self.limits.max_total_size {
             return Err(Error::limit("file is larger than the size limit"));
         }
-        let (stream, verified, mac) = data_stream(&mut self.keys, &self.vols, self.password.as_ref(), item)?;
+        let (stream, verified, mac) =
+            data_stream(&mut self.keys, &self.vols, self.password.as_ref(), item)?;
         let encrypted = rec.crypt.is_some();
         let expected = rec.size_known.then_some(rec.size);
         let packed: u64 = crate::util::total_size(item.segs.iter().map(|s| s.len));
         let mut window = 0;
         if rec.method != 0 {
-            window = self.groups[data].and_then(|g| self.group_window.get(&g).copied()).unwrap_or_else(|| window_size(rec.dict, expected));
+            window = self.groups[data]
+                .and_then(|g| self.group_window.get(&g).copied())
+                .unwrap_or_else(|| window_size(rec.dict, expected));
         }
-        let name = deliver.map(|d| self.entries[d].path.clone()).unwrap_or_default();
+        let name = deliver
+            .map(|d| self.entries[d].path.clone())
+            .unwrap_or_default();
         let is_link_data = matches!(rec.link, Link::InData);
         let mut decoder_holder;
         let source: Box<dyn Read + '_> = if rec.method == 0 {
@@ -593,14 +728,18 @@ impl RarReader {
             }
         } else if packed == 0 {
             if expected.unwrap_or(0) > 0 {
-                return Err(Error::corrupt("the compressed data of this file is missing"));
+                return Err(Error::corrupt(
+                    "the compressed data of this file is missing",
+                ));
             }
             Box::new(io::empty())
         } else {
             let codec = codec.ok_or_else(|| Error::corrupt("RAR: no codec"))?;
             if up.as_ref().is_some_and(|u| u.codec != codec) {
                 if solid_continue {
-                    return Err(Error::corrupt("RAR: a solid stream changes its compression version"));
+                    return Err(Error::corrupt(
+                        "RAR: a solid stream changes its compression version",
+                    ));
                 }
                 *up = None;
             }
@@ -649,18 +788,38 @@ impl RarReader {
         // Checksum results come at the end of a complete stream; anything
         // else from the decoder means the rest of a solid stream is lost.
         let decoded_fully = stream_ok || matches!(err, Error::Checksum(_) | Error::WrongPassword);
-        if encrypted && !verified && matches!(err, Error::Corrupt(_) | Error::Io(_) | Error::Checksum(_)) {
+        if encrypted
+            && !verified
+            && matches!(err, Error::Corrupt(_) | Error::Io(_) | Error::Checksum(_))
+        {
             err = Error::WrongPassword;
         }
-        if decoded_fully { Ok(Done::Entry(err)) } else { Err(err) }
+        if decoded_fully {
+            Ok(Done::Entry(err))
+        } else {
+            Err(err)
+        }
     }
 
     /// A RAR5 "file copy": the content of an earlier file, decoded again.
-    fn extract_copy(&mut self, i: usize, target: &str, visitor: &mut dyn EntryVisitor, progress: &Progress) -> Result<()> {
+    fn extract_copy(
+        &mut self,
+        i: usize,
+        target: &str,
+        visitor: &mut dyn EntryVisitor,
+        progress: &Progress,
+    ) -> Result<()> {
         let (want, _) = normalize_path(target);
-        let src = (0..i).rev().find(|&j| self.entries[j].path == want && has_stream(&self.items[j].rec));
+        let src = (0..i)
+            .rev()
+            .find(|&j| self.entries[j].path == want && has_stream(&self.items[j].rec));
         let Some(j) = src else {
-            return visitor.entry_error(&self.entries[i], Error::corrupt(format!("the original of this file copy ({target}) is not in the archive")));
+            return visitor.entry_error(
+                &self.entries[i],
+                Error::corrupt(format!(
+                    "the original of this file copy ({target}) is not in the archive"
+                )),
+            );
         };
         let mut up: Option<Unpacker> = None;
         let res = (|| -> Result<Done> {
@@ -669,7 +828,9 @@ impl RarReader {
                 let mut started = false;
                 for k in first..j {
                     if self.groups[k] == Some(g) {
-                        if let Done::Entry(e) = self.decode_item(k, &mut up, started, None, visitor, progress)? {
+                        if let Done::Entry(e) =
+                            self.decode_item(k, &mut up, started, None, visitor, progress)?
+                        {
                             return Err(e);
                         }
                         started = true;
@@ -706,7 +867,12 @@ impl ArchiveReader for RarReader {
         self.info.clone()
     }
 
-    fn extract(&mut self, selected: &dyn Fn(&Entry) -> bool, visitor: &mut dyn EntryVisitor, progress: &Progress) -> Result<()> {
+    fn extract(
+        &mut self,
+        selected: &dyn Fn(&Entry) -> bool,
+        visitor: &mut dyn EntryVisitor,
+        progress: &Progress,
+    ) -> Result<()> {
         let sel: Vec<bool> = self.entries.iter().map(selected).collect();
         let mut last_needed: HashMap<usize, usize> = HashMap::new();
         for (i, g) in self.groups.iter().enumerate() {
@@ -719,7 +885,8 @@ impl ArchiveReader for RarReader {
         let mut prev_group: Option<usize> = None;
         for (i, &is_sel) in sel.iter().enumerate() {
             let group = self.groups[i];
-            let needed = is_sel || group.is_some_and(|g| last_needed.get(&g).is_some_and(|&l| l > i));
+            let needed =
+                is_sel || group.is_some_and(|g| last_needed.get(&g).is_some_and(|&l| l > i));
             if !needed {
                 continue;
             }
@@ -780,10 +947,14 @@ impl ArchiveReader for RarReader {
                     }
                 }
                 Err(Error::Cancelled) => return Err(Error::Cancelled),
-                Err(e @ Error::LimitExceeded(_)) if group.is_none() => visitor.entry_error(&self.entries[i], e)?,
+                Err(e @ Error::LimitExceeded(_)) if group.is_none() => {
+                    visitor.entry_error(&self.entries[i], e)?
+                }
                 Err(e) => {
                     if let Some(g) = group {
-                        let note = Error::Corrupt(format!("an earlier file in this solid archive could not be decoded ({e})"));
+                        let note = Error::Corrupt(format!(
+                            "an earlier file in this solid archive could not be decoded ({e})"
+                        ));
                         broken = Some((g, note));
                     }
                     if is_sel {

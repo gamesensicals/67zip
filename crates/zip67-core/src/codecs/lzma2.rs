@@ -16,8 +16,15 @@ use crate::error::Error;
 
 enum State {
     Control,
-    Header { ctrl: u8, got: usize, need: usize, buf: [u8; 5] },
-    Data { left: usize },
+    Header {
+        ctrl: u8,
+        got: usize,
+        need: usize,
+        buf: [u8; 5],
+    },
+    Data {
+        left: usize,
+    },
     Ended,
 }
 
@@ -31,7 +38,12 @@ pub struct Lzma2Guard<R> {
 
 impl<R: Read> Lzma2Guard<R> {
     pub fn new(inner: R) -> Self {
-        Lzma2Guard { inner, state: State::Control, have_dict: false, have_props: false }
+        Lzma2Guard {
+            inner,
+            state: State::Control,
+            have_dict: false,
+            have_props: false,
+        }
     }
 
     fn bad(msg: &str) -> io::Error {
@@ -62,9 +74,16 @@ impl<R: Read> Lzma2Guard<R> {
                                 // An uncompressed chunk with dictionary reset
                                 // does not reset the LZMA state/properties.
                             } else if !self.have_dict {
-                                return Err(Self::bad("stream does not start with a dictionary reset"));
+                                return Err(Self::bad(
+                                    "stream does not start with a dictionary reset",
+                                ));
                             }
-                            self.state = State::Header { ctrl: c, got: 0, need: 2, buf: [0; 5] };
+                            self.state = State::Header {
+                                ctrl: c,
+                                got: 0,
+                                need: 2,
+                                buf: [0; 5],
+                            };
                         }
                         3..=0x7f => return Err(Self::bad("invalid control byte")),
                         _ => {
@@ -73,7 +92,9 @@ impl<R: Read> Lzma2Guard<R> {
                                 self.have_dict = true;
                             }
                             if !self.have_dict {
-                                return Err(Self::bad("stream does not start with a dictionary reset"));
+                                return Err(Self::bad(
+                                    "stream does not start with a dictionary reset",
+                                ));
                             }
                             if reset >= 2 {
                                 self.have_props = true;
@@ -81,11 +102,21 @@ impl<R: Read> Lzma2Guard<R> {
                                 return Err(Self::bad("compressed chunk before its properties"));
                             }
                             let need = if reset >= 2 { 5 } else { 4 };
-                            self.state = State::Header { ctrl: c, got: 0, need, buf: [0; 5] };
+                            self.state = State::Header {
+                                ctrl: c,
+                                got: 0,
+                                need,
+                                buf: [0; 5],
+                            };
                         }
                     }
                 }
-                State::Header { ctrl, got, need, buf } => {
+                State::Header {
+                    ctrl,
+                    got,
+                    need,
+                    buf,
+                } => {
                     buf[*got] = data[i];
                     *got += 1;
                     i += 1;
@@ -133,7 +164,11 @@ pub struct Lzma2StreamReader<R> {
 
 impl<R: BufRead> Lzma2StreamReader<R> {
     pub fn new(inner: R, dict: u32) -> Self {
-        Lzma2StreamReader { inner, st: Lzma2Stream::new(dict), done: false }
+        Lzma2StreamReader {
+            inner,
+            st: Lzma2Stream::new(dict),
+            done: false,
+        }
     }
 }
 
@@ -147,7 +182,10 @@ impl<R: BufRead> Read for Lzma2StreamReader<R> {
             let input = self.inner.fill_buf()?;
             let eof = input.is_empty();
             let action = if eof { Action::Finish } else { Action::Run };
-            let r = self.st.process(input, buf, action).map_err(|e| io::Error::from(Error::corrupt(format!("LZMA2: {e}"))))?;
+            let r = self
+                .st
+                .process(input, buf, action)
+                .map_err(|e| io::Error::from(Error::corrupt(format!("LZMA2: {e}"))))?;
             self.inner.consume(r.bytes_consumed);
             if r.status == Status::StreamEnd {
                 self.done = true;
@@ -169,14 +207,26 @@ impl<R: BufRead> Read for Lzma2StreamReader<R> {
 }
 
 /// Builds a guarded LZMA2 decoder (multi-threaded when `threads` > 1).
-pub fn decoder<'a, R: Read + Send + 'a>(input: R, dict: u32, threads: usize) -> Box<dyn Read + Send + 'a>
+pub fn decoder<'a, R: Read + Send + 'a>(
+    input: R,
+    dict: u32,
+    threads: usize,
+) -> Box<dyn Read + Send + 'a>
 where
     R: 'static,
 {
     let guarded = Lzma2Guard::new(input);
     if threads > 1 {
-        Box::new(lzma_rust2::Lzma2ReaderMt::new(guarded, dict, None, threads as u32))
+        Box::new(lzma_rust2::Lzma2ReaderMt::new(
+            guarded,
+            dict,
+            None,
+            threads as u32,
+        ))
     } else {
-        Box::new(Lzma2StreamReader::new(BufReader::with_capacity(128 * 1024, guarded), dict))
+        Box::new(Lzma2StreamReader::new(
+            BufReader::with_capacity(128 * 1024, guarded),
+            dict,
+        ))
     }
 }

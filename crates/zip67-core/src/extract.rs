@@ -60,7 +60,13 @@ pub enum Answer {
 
 /// Asks the user about conflicts (GUI dialog, CLI prompt).
 pub trait Prompt: Send {
-    fn overwrite(&mut self, relative_path: &str, existing_size: u64, existing_mtime: Option<i64>, entry: &Entry) -> Answer;
+    fn overwrite(
+        &mut self,
+        relative_path: &str,
+        existing_size: u64,
+        existing_mtime: Option<i64>,
+        entry: &Entry,
+    ) -> Answer;
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -112,9 +118,15 @@ impl Selection {
                 Box::new(move |e| set.contains(&e.index))
             }
             Selection::Paths(p) => {
-                let paths: Vec<String> = p.iter().map(|s| s.trim_matches('/').to_string()).collect();
+                let paths: Vec<String> =
+                    p.iter().map(|s| s.trim_matches('/').to_string()).collect();
                 Box::new(move |e| {
-                    paths.iter().any(|p| p.is_empty() || e.path == *p || (e.path.starts_with(p.as_str()) && e.path.as_bytes().get(p.len()) == Some(&b'/')))
+                    paths.iter().any(|p| {
+                        p.is_empty()
+                            || e.path == *p
+                            || (e.path.starts_with(p.as_str())
+                                && e.path.as_bytes().get(p.len()) == Some(&b'/'))
+                    })
                 })
             }
             Selection::Patterns(p) => {
@@ -123,7 +135,8 @@ impl Selection {
                     pats.iter().any(|p| {
                         crate::create::wildcard_match(p, &e.path)
                             || crate::create::wildcard_match(p, e.name())
-                            || (e.path.starts_with(p.as_str()) && e.path.as_bytes().get(p.len()) == Some(&b'/'))
+                            || (e.path.starts_with(p.as_str())
+                                && e.path.as_bytes().get(p.len()) == Some(&b'/'))
                     })
                 })
             }
@@ -220,7 +233,12 @@ fn current_umask() -> u32 {
 }
 
 impl<'a> FsVisitor<'a> {
-    pub fn new(dest: &Path, opts: ExtractOptions, prompt: Option<&'a mut dyn Prompt>, archive_size: u64) -> Result<Self> {
+    pub fn new(
+        dest: &Path,
+        opts: ExtractOptions,
+        prompt: Option<&'a mut dyn Prompt>,
+        archive_size: u64,
+    ) -> Result<Self> {
         std::fs::create_dir_all(dest)?;
         let root = Dir::open_ambient_dir(dest, cap_std::ambient_authority())?;
         Ok(FsVisitor {
@@ -257,14 +275,19 @@ impl<'a> FsVisitor<'a> {
                 let base = self.opts.base.trim_matches('/');
                 if base.is_empty() {
                     &entry.path
-                } else if let Some(r) = entry.path.strip_prefix(base).and_then(|r| r.strip_prefix('/')) {
+                } else if let Some(r) = entry
+                    .path
+                    .strip_prefix(base)
+                    .and_then(|r| r.strip_prefix('/'))
+                {
                     r
                 } else {
                     return Ok(None);
                 }
             }
         };
-        let comps = safe_components(rel).map_err(|why| Error::UnsafePath(format!("{}: {why}", entry.path)))?;
+        let comps = safe_components(rel)
+            .map_err(|why| Error::UnsafePath(format!("{}: {why}", entry.path)))?;
         Ok(Some(comps.iter().collect()))
     }
 
@@ -279,7 +302,10 @@ impl<'a> FsVisitor<'a> {
 
     fn free_name(&self, rel: &Path) -> PathBuf {
         let parent = rel.parent().map(Path::to_path_buf).unwrap_or_default();
-        let name = rel.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+        let name = rel
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
         let (stem, ext) = match name.rfind('.') {
             Some(i) if i > 0 => (name[..i].to_string(), name[i..].to_string()),
             _ => (name.clone(), String::new()),
@@ -295,18 +321,27 @@ impl<'a> FsVisitor<'a> {
 
     /// Resolves a name clash. Returns the path to write to, or None to skip.
     fn resolve_conflict(&mut self, rel: PathBuf, entry: &Entry) -> Result<Option<PathBuf>> {
-        let Ok(md) = self.root.symlink_metadata(&rel) else { return Ok(Some(rel)) };
+        let Ok(md) = self.root.symlink_metadata(&rel) else {
+            return Ok(Some(rel));
+        };
         if md.is_dir() {
             if entry.kind == EntryKind::Dir {
                 return Ok(Some(rel));
             }
-            return Err(Error::invalid(format!("a folder named {} already exists", rel.display())));
+            return Err(Error::invalid(format!(
+                "a folder named {} already exists",
+                rel.display()
+            )));
         }
         let mut policy = self.sticky.unwrap_or(self.opts.overwrite);
         if policy == Overwrite::Ask {
             let answer = match self.prompt.as_mut() {
                 Some(p) => {
-                    let mtime = md.modified().ok().and_then(|t| t.into_std().duration_since(UNIX_EPOCH).ok()).map(|d| d.as_secs() as i64);
+                    let mtime = md
+                        .modified()
+                        .ok()
+                        .and_then(|t| t.into_std().duration_since(UNIX_EPOCH).ok())
+                        .map(|d| d.as_secs() as i64);
                     p.overwrite(&rel.to_string_lossy(), md.len(), mtime, entry)
                 }
                 None => Answer::No,
@@ -364,8 +399,13 @@ impl<'a> FsVisitor<'a> {
         if self.total_written > l.max_total_size {
             return Err(Error::limit("extracted data exceeds the total size limit"));
         }
-        if self.total_written > l.ratio_grace && self.archive_size > 0 && self.total_written / self.archive_size.max(1) > l.max_ratio {
-            return Err(Error::limit("archive expands far more than real data does (decompression bomb?)"));
+        if self.total_written > l.ratio_grace
+            && self.archive_size > 0
+            && self.total_written / self.archive_size.max(1) > l.max_ratio
+        {
+            return Err(Error::limit(
+                "archive expands far more than real data does (decompression bomb?)",
+            ));
         }
         Ok(())
     }
@@ -374,8 +414,16 @@ impl<'a> FsVisitor<'a> {
         if !self.opts.preserve_mtime {
             return;
         }
-        let Some(t) = system_time(secs, nanos) else { return };
-        let f = if is_dir { self.root.open_dir(rel).map(Dir::into_std_file) } else { self.root.open_with(rel, OpenOptions::new().write(true)).map(cap_std::fs::File::into_std) };
+        let Some(t) = system_time(secs, nanos) else {
+            return;
+        };
+        let f = if is_dir {
+            self.root.open_dir(rel).map(Dir::into_std_file)
+        } else {
+            self.root
+                .open_with(rel, OpenOptions::new().write(true))
+                .map(cap_std::fs::File::into_std)
+        };
         if let Ok(f) = f {
             let _ = f.set_times(std::fs::FileTimes::new().set_modified(t).set_accessed(t));
         }
@@ -387,7 +435,10 @@ impl<'a> FsVisitor<'a> {
         for (p, s, n, mode) in v {
             if let (Some(m), true) = (mode, self.opts.preserve_permissions) {
                 // Always keep the owner able to enter and write the folder.
-                let _ = self.root.set_permissions(&p, cap_std::fs::Permissions::from_mode(((m & 0o777) | 0o700) & !self.umask));
+                let _ = self.root.set_permissions(
+                    &p,
+                    cap_std::fs::Permissions::from_mode(((m & 0o777) | 0o700) & !self.umask),
+                );
             }
             self.set_times(&p, s, n, true);
         }
@@ -404,13 +455,17 @@ fn system_time(secs: i64, nanos: u32) -> Option<SystemTime> {
 
 impl EntryVisitor for FsVisitor<'_> {
     fn file(&mut self, entry: &Entry, data: &mut dyn Read) -> Result<()> {
-        let Some(rel) = self.target(entry)? else { return Ok(()) };
+        let Some(rel) = self.target(entry)? else {
+            return Ok(());
+        };
         self.ensure_parent(&rel)?;
         let Some(rel) = self.resolve_conflict(rel, entry)? else {
             crate::io::drain(data)?;
             return Ok(());
         };
-        let mut f = self.root.open_with(&rel, OpenOptions::new().write(true).create_new(true))?;
+        let mut f = self
+            .root
+            .open_with(&rel, OpenOptions::new().write(true).create_new(true))?;
         let mut buf = vec![0u8; crate::io::BUF_SIZE];
         let mut written = 0u64;
         let res: Result<()> = (|| {
@@ -441,7 +496,8 @@ impl EntryVisitor for FsVisitor<'_> {
         if self.opts.preserve_permissions {
             if let Some(m) = entry.mode {
                 // No setuid/setgid/sticky bits from untrusted archives.
-                let _ = f.set_permissions(cap_std::fs::Permissions::from_mode(m & 0o777 & !self.umask));
+                let _ =
+                    f.set_permissions(cap_std::fs::Permissions::from_mode(m & 0o777 & !self.umask));
             }
         }
         drop(f);
@@ -458,10 +514,15 @@ impl EntryVisitor for FsVisitor<'_> {
         if self.opts.path_mode == PathMode::Flat {
             return Ok(());
         }
-        let Some(rel) = self.target(entry)? else { return Ok(()) };
+        let Some(rel) = self.target(entry)? else {
+            return Ok(());
+        };
         if let Ok(md) = self.root.symlink_metadata(&rel) {
             if !md.is_dir() {
-                return Err(Error::invalid(format!("{} exists and is not a folder", rel.display())));
+                return Err(Error::invalid(format!(
+                    "{} exists and is not a folder",
+                    rel.display()
+                )));
             }
         } else {
             self.root.create_dir_all(&rel)?;
@@ -476,32 +537,49 @@ impl EntryVisitor for FsVisitor<'_> {
     }
 
     fn symlink(&mut self, entry: &Entry, target: &str) -> Result<()> {
-        let Some(rel) = self.target(entry)? else { return Ok(()) };
-        let comps: Vec<String> = rel.iter().map(|c| c.to_string_lossy().into_owned()).collect();
+        let Some(rel) = self.target(entry)? else {
+            return Ok(());
+        };
+        let comps: Vec<String> = rel
+            .iter()
+            .map(|c| c.to_string_lossy().into_owned())
+            .collect();
         let comp_refs: Vec<&str> = comps.iter().map(String::as_str).collect();
         if !symlink_stays_inside(&comp_refs, target) {
-            let msg = format!("{}: symbolic link to '{target}' points outside the destination, not created", entry.path);
+            let msg = format!(
+                "{}: symbolic link to '{target}' points outside the destination, not created",
+                entry.path
+            );
             self.report.warnings.push(msg);
             self.report.skipped += 1;
             return Ok(());
         }
         self.ensure_parent(&rel)?;
-        let Some(rel) = self.resolve_conflict(rel, entry)? else { return Ok(()) };
+        let Some(rel) = self.resolve_conflict(rel, entry)? else {
+            return Ok(());
+        };
         self.root.symlink(target, &rel)?;
         self.report.links += 1;
         Ok(())
     }
 
     fn hardlink(&mut self, entry: &Entry, target: &str) -> Result<()> {
-        let Some(rel) = self.target(entry)? else { return Ok(()) };
+        let Some(rel) = self.target(entry)? else {
+            return Ok(());
+        };
         let (norm, unsafe_target) = crate::util::normalize_path(target);
         let Some(src) = self.written.get(&norm).cloned().filter(|_| !unsafe_target) else {
-            self.report.warnings.push(format!("{}: hard link target '{target}' was not extracted, skipped", entry.path));
+            self.report.warnings.push(format!(
+                "{}: hard link target '{target}' was not extracted, skipped",
+                entry.path
+            ));
             self.report.skipped += 1;
             return Ok(());
         };
         self.ensure_parent(&rel)?;
-        let Some(rel) = self.resolve_conflict(rel, entry)? else { return Ok(()) };
+        let Some(rel) = self.resolve_conflict(rel, entry)? else {
+            return Ok(());
+        };
         self.root.hard_link(&src, &self.root, &rel)?;
         self.report.links += 1;
         Ok(())
@@ -511,7 +589,9 @@ impl EntryVisitor for FsVisitor<'_> {
         if matches!(err, Error::Cancelled | Error::LimitExceeded(_)) || self.cancelled {
             return Err(err);
         }
-        self.report.errors.push((entry.path.clone(), err.to_string()));
+        self.report
+            .errors
+            .push((entry.path.clone(), err.to_string()));
         Ok(())
     }
 }
@@ -553,14 +633,20 @@ pub fn extract_to(
     let mut report = v.into_report();
     report.warnings.extend(reader.info().problems);
     if unsafe_count > 0 {
-        report.warnings.push(format!("{unsafe_count} entries with unsafe paths (absolute or '..') were not extracted"));
+        report.warnings.push(format!(
+            "{unsafe_count} entries with unsafe paths (absolute or '..') were not extracted"
+        ));
     }
     result?;
     Ok(report)
 }
 
 /// Checks the integrity of the selected entries without writing anything.
-pub fn test(reader: &mut dyn ArchiveReader, selection: &Selection, progress: &Progress) -> Result<ExtractReport> {
+pub fn test(
+    reader: &mut dyn ArchiveReader,
+    selection: &Selection,
+    progress: &Progress,
+) -> Result<ExtractReport> {
     struct Tester {
         report: ExtractReport,
     }
@@ -583,21 +669,36 @@ pub fn test(reader: &mut dyn ArchiveReader, selection: &Selection, progress: &Pr
             if matches!(err, Error::Cancelled) {
                 return Err(err);
             }
-            self.report.errors.push((entry.path.clone(), err.to_string()));
+            self.report
+                .errors
+                .push((entry.path.clone(), err.to_string()));
             Ok(())
         }
     }
     let matcher = selection.matcher();
-    let total: u64 = crate::util::total_size(reader.entries().iter().filter(|e| matcher(e)).map(|e| e.size));
+    let total: u64 = crate::util::total_size(
+        reader
+            .entries()
+            .iter()
+            .filter(|e| matcher(e))
+            .map(|e| e.size),
+    );
     progress.set_total(total);
-    let mut t = Tester { report: ExtractReport::default() };
+    let mut t = Tester {
+        report: ExtractReport::default(),
+    };
     reader.extract(&*matcher, &mut t, progress)?;
     t.report.warnings.extend(reader.info().problems);
     Ok(t.report)
 }
 
 /// Collects one entry's content in memory (small previews only).
-pub fn read_entry(reader: &mut dyn ArchiveReader, index: usize, max: u64, progress: &Progress) -> Result<Vec<u8>> {
+pub fn read_entry(
+    reader: &mut dyn ArchiveReader,
+    index: usize,
+    max: u64,
+    progress: &Progress,
+) -> Result<Vec<u8>> {
     struct Grab {
         max: u64,
         out: Option<Vec<u8>>,
@@ -615,7 +716,8 @@ pub fn read_entry(reader: &mut dyn ArchiveReader, index: usize, max: u64, progre
     }
     let mut g = Grab { max, out: None };
     reader.extract(&|e: &Entry| e.index == index, &mut g, progress)?;
-    g.out.ok_or_else(|| Error::invalid("entry not found or not a file"))
+    g.out
+        .ok_or_else(|| Error::invalid("entry not found or not a file"))
 }
 
 #[cfg(test)]

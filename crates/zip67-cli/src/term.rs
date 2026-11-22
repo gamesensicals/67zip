@@ -2,14 +2,14 @@
 
 use std::io::{self, BufRead, IsTerminal, Write};
 use std::os::fd::AsFd;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread::JoinHandle;
 use std::time::Duration;
 
 use zip67_core::extract::{Answer, Prompt};
-use zip67_core::util::{format_local_time, human_size, safe_display};
 use zip67_core::progress::Snapshot;
+use zip67_core::util::{format_local_time, human_size, safe_display};
 use zip67_core::{Entry, Progress};
 
 pub fn read_line() -> Option<String> {
@@ -47,25 +47,47 @@ pub fn interactive() -> bool {
 pub struct TtyPrompt;
 
 impl Prompt for TtyPrompt {
-    fn overwrite(&mut self, path: &str, existing_size: u64, existing_mtime: Option<i64>, entry: &Entry) -> Answer {
+    fn overwrite(
+        &mut self,
+        path: &str,
+        existing_size: u64,
+        existing_mtime: Option<i64>,
+        entry: &Entry,
+    ) -> Answer {
         ask_overwrite(path, existing_size, existing_mtime, entry.size, entry.mtime)
     }
 }
 
 /// Asks whether to overwrite an existing file.
-pub fn ask_overwrite(path: &str, existing_size: u64, existing_mtime: Option<i64>, new_size: u64, new_mtime: Option<i64>) -> Answer {
+pub fn ask_overwrite(
+    path: &str,
+    existing_size: u64,
+    existing_mtime: Option<i64>,
+    new_size: u64,
+    new_mtime: Option<i64>,
+) -> Answer {
     {
         if !interactive() {
             return Answer::No;
         }
         clear_line();
         eprintln!("\nFile already exists: {}", safe_display(path));
-        eprintln!("  existing: {:>12}  {}", human_size(existing_size), existing_mtime.map(format_local_time).unwrap_or_default());
-        eprintln!("  new:      {:>12}  {}", human_size(new_size), new_mtime.map(format_local_time).unwrap_or_default());
+        eprintln!(
+            "  existing: {:>12}  {}",
+            human_size(existing_size),
+            existing_mtime.map(format_local_time).unwrap_or_default()
+        );
+        eprintln!(
+            "  new:      {:>12}  {}",
+            human_size(new_size),
+            new_mtime.map(format_local_time).unwrap_or_default()
+        );
         loop {
             eprint!("Overwrite? (Y)es / (N)o / (A)lways / (S)kip all / A(u)to rename / (Q)uit? ");
             let _ = io::stderr().flush();
-            let Some(l) = read_line() else { return Answer::Cancel };
+            let Some(l) = read_line() else {
+                return Answer::Cancel;
+            };
             match l.trim().to_ascii_lowercase().as_str() {
                 "y" | "yes" => return Answer::Yes,
                 "n" | "no" => return Answer::No,
@@ -105,10 +127,24 @@ impl ProgressLine {
                 while !s.load(Ordering::Relaxed) {
                     std::thread::sleep(Duration::from_millis(200));
                     let snap = get();
-                    let pct = snap.done.min(snap.total).saturating_mul(100).checked_div(snap.total).unwrap_or(0);
+                    let pct = snap
+                        .done
+                        .min(snap.total)
+                        .saturating_mul(100)
+                        .checked_div(snap.total)
+                        .unwrap_or(0);
                     let mut name = safe_display(&snap.current);
                     if name.chars().count() > 50 {
-                        name = format!("…{}", name.chars().rev().take(49).collect::<Vec<_>>().into_iter().rev().collect::<String>());
+                        name = format!(
+                            "…{}",
+                            name.chars()
+                                .rev()
+                                .take(49)
+                                .collect::<Vec<_>>()
+                                .into_iter()
+                                .rev()
+                                .collect::<String>()
+                        );
                     }
                     eprint!("\r\x1b[K{pct:3}% {:>10}  {name}", human_size(snap.done));
                     let _ = io::stderr().flush();

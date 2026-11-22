@@ -45,11 +45,15 @@ pub fn is_rar(head: &[u8]) -> bool {
 /// or Linux executable, or a file named `.exe` / `.sfx`).
 pub fn find_sfx_signature(head: &[u8], name: &str) -> Option<usize> {
     let lower = name.to_ascii_lowercase();
-    let program = head.starts_with(b"MZ") || head.starts_with(b"\x7fELF") || lower.ends_with(".exe") || lower.ends_with(".sfx");
+    let program = head.starts_with(b"MZ")
+        || head.starts_with(b"\x7fELF")
+        || lower.ends_with(".exe")
+        || lower.ends_with(".sfx");
     if !program {
         return None;
     }
-    head.windows(8).position(|w| w == rar5::SIGNATURE || &w[..7] == rar4::SIGNATURE)
+    head.windows(8)
+        .position(|w| w == rar5::SIGNATURE || &w[..7] == rar4::SIGNATURE)
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -66,8 +70,16 @@ impl Default for Version {
 
 #[derive(Clone, Debug)]
 pub(crate) enum Crypt {
-    V5 { lg2: u8, salt: [u8; 16], iv: [u8; 16], check: Option<[u8; 8]>, mac: bool },
-    V3 { salt: Option<[u8; 8]> },
+    V5 {
+        lg2: u8,
+        salt: [u8; 16],
+        iv: [u8; 16],
+        check: Option<[u8; 8]>,
+        mac: bool,
+    },
+    V3 {
+        salt: Option<[u8; 8]>,
+    },
     Unknown(String),
 }
 
@@ -147,9 +159,15 @@ pub(crate) struct KeyCache {
 
 impl KeyCache {
     pub fn rar5(&mut self, pw: &Password, salt: &[u8; 16], lg2: u8) -> Arc<crypto::Keys5> {
-        self.v5.entry((*salt, lg2)).or_insert_with(|| Arc::new(crypto::derive5(pw, salt, lg2))).clone()
+        self.v5
+            .entry((*salt, lg2))
+            .or_insert_with(|| Arc::new(crypto::derive5(pw, salt, lg2)))
+            .clone()
     }
     pub fn rar3(&mut self, pw: &Password, salt: Option<&[u8; 8]>) -> Keys3 {
-        self.v3.entry(salt.copied()).or_insert_with(|| crypto::derive3(pw, salt)).clone()
+        self.v3
+            .entry(salt.copied())
+            .or_insert_with(|| crypto::derive3(pw, salt))
+            .clone()
     }
 }

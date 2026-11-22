@@ -26,9 +26,10 @@ pub struct BenchResult {
 /// Compressible pseudo-text: words, numbers and some noise.
 pub fn sample_data(size: usize, seed: u64) -> Vec<u8> {
     const WORDS: [&str; 32] = [
-        "archive", "file", "the", "data", "compress", "folder", "and", "of", "67zip", "linux", "speed", "secure", "rust", "block",
-        "stream", "header", "entry", "name", "size", "time", "value", "table", "index", "from", "into", "with", "level", "method",
-        "test", "open", "save", "close",
+        "archive", "file", "the", "data", "compress", "folder", "and", "of", "67zip", "linux",
+        "speed", "secure", "rust", "block", "stream", "header", "entry", "name", "size", "time",
+        "value", "table", "index", "from", "into", "with", "level", "method", "test", "open",
+        "save", "close",
     ];
     let mut x = seed | 1;
     let mut next = || {
@@ -58,7 +59,13 @@ pub fn sample_data(size: usize, seed: u64) -> Vec<u8> {
     out
 }
 
-fn measure(c: Compression, level: u32, threads: usize, data: &[u8], progress: &Progress) -> Result<BenchResult> {
+fn measure(
+    c: Compression,
+    level: u32,
+    threads: usize,
+    data: &[u8],
+    progress: &Progress,
+) -> Result<BenchResult> {
     progress.check()?;
     let t = Instant::now();
     let mut packed = Vec::new();
@@ -84,7 +91,11 @@ fn measure(c: Compression, level: u32, threads: usize, data: &[u8], progress: &P
     let dt = t.elapsed().as_secs_f64().max(1e-6);
     progress.add_done(1);
     Ok(BenchResult {
-        method: format!("{}{}", c.display(), if c == Compression::Xz { " (LZMA2)" } else { "" }),
+        method: format!(
+            "{}{}",
+            c.display(),
+            if c == Compression::Xz { " (LZMA2)" } else { "" }
+        ),
         threads,
         compress_mbps: data.len() as f64 / 1e6 / ct,
         decompress_mbps: n as f64 / 1e6 / dt,

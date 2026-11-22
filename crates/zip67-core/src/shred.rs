@@ -36,14 +36,21 @@ pub fn shred_file(path: &Path) -> io::Result<Shredded> {
         return Ok(Shredded::Kept("not a regular file".into()));
     }
     if md.nlink() > 1 {
-        return Ok(Shredded::Kept("other hard links share its data, so it was kept".into()));
+        return Ok(Shredded::Kept(
+            "other hard links share its data, so it was kept".into(),
+        ));
     }
     let nofollow = rustix::fs::OFlags::NOFOLLOW.bits() as i32;
-    let mut f = OpenOptions::new().write(true).custom_flags(nofollow).open(path)?;
+    let mut f = OpenOptions::new()
+        .write(true)
+        .custom_flags(nofollow)
+        .open(path)?;
     // Still the same file we looked at (not swapped in the meantime).
     let fmd = f.metadata()?;
     if fmd.dev() != md.dev() || fmd.ino() != md.ino() {
-        return Ok(Shredded::Kept("the file changed while it was being deleted".into()));
+        return Ok(Shredded::Kept(
+            "the file changed while it was being deleted".into(),
+        ));
     }
     overwrite(&mut f, fmd.len())?;
     f.set_len(0)?;
@@ -55,7 +62,11 @@ pub fn shred_file(path: &Path) -> io::Result<Shredded> {
         _ => PathBuf::from("."),
     };
     let hidden = dir.join(format!(".{}", crate::util::random_hex(12)));
-    let gone = if fs::rename(path, &hidden).is_ok() { hidden } else { path.to_path_buf() };
+    let gone = if fs::rename(path, &hidden).is_ok() {
+        hidden
+    } else {
+        path.to_path_buf()
+    };
     fs::remove_file(&gone)?;
     if let Ok(d) = File::open(&dir) {
         let _ = d.sync_all();
@@ -80,7 +91,9 @@ fn overwrite(f: &mut File, len: u64) -> io::Result<()> {
 /// removes the folders. Returns the problems met.
 pub fn shred_tree(dir: &Path) -> Vec<String> {
     let mut problems = Vec::new();
-    let Ok(md) = fs::symlink_metadata(dir) else { return problems };
+    let Ok(md) = fs::symlink_metadata(dir) else {
+        return problems;
+    };
     if !md.is_dir() {
         if let Err(e) = shred_file(dir) {
             problems.push(format!("{}: {e}", dir.display()));
@@ -113,7 +126,9 @@ const CIFS: u64 = 0xff53_4d42;
 const FUSE: u64 = 0x6573_5546;
 
 fn fs_type(path: &Path) -> Option<u64> {
-    rustix::fs::statfs(path).ok().map(|s| (s.f_type as u64) & 0xffff_ffff)
+    rustix::fs::statfs(path)
+        .ok()
+        .map(|s| (s.f_type as u64) & 0xffff_ffff)
 }
 
 /// True when `path` lives in memory (tmpfs/ramfs), not on a disk.
@@ -127,9 +142,13 @@ pub fn reliability(path: &Path) -> Option<String> {
     let t = fs_type(path)?;
     let why = match t {
         TMPFS | RAMFS => return None,
-        BTRFS | ZFS | BCACHEFS | F2FS | NILFS => "it is on a copy-on-write file system, which writes new data elsewhere and may keep the old blocks (and snapshots)",
+        BTRFS | ZFS | BCACHEFS | F2FS | NILFS => {
+            "it is on a copy-on-write file system, which writes new data elsewhere and may keep the old blocks (and snapshots)"
+        }
         OVERLAY => "it is on an overlay file system, which may keep the original in a lower layer",
-        NFS | SMB | CIFS | FUSE => "it is on a network or FUSE file system whose storage 67zip cannot check",
+        NFS | SMB | CIFS | FUSE => {
+            "it is on a network or FUSE file system whose storage 67zip cannot check"
+        }
         _ => match disk_kind(path) {
             Disk::Rotational | Disk::Encrypted => return None,
             Disk::Solid => "it is on an SSD, which may keep old data in cells it remaps",
@@ -147,17 +166,30 @@ enum Disk {
 }
 
 fn disk_kind(path: &Path) -> Disk {
-    let Ok(md) = fs::metadata(path) else { return Disk::Unknown };
+    let Ok(md) = fs::metadata(path) else {
+        return Disk::Unknown;
+    };
     let dev = md.dev();
-    let base = PathBuf::from(format!("/sys/dev/block/{}:{}", rustix::fs::major(dev), rustix::fs::minor(dev)));
+    let base = PathBuf::from(format!(
+        "/sys/dev/block/{}:{}",
+        rustix::fs::major(dev),
+        rustix::fs::minor(dev)
+    ));
     // Device-mapper crypt (LUKS): the data at rest is encrypted anyway.
     if fs::read_to_string(base.join("dm/uuid")).is_ok_and(|u| u.starts_with("CRYPT-")) {
         return Disk::Encrypted;
     }
     // Partitions keep the "queue" folder in their parent disk.
-    for q in [base.join("queue/rotational"), base.join("../queue/rotational")] {
+    for q in [
+        base.join("queue/rotational"),
+        base.join("../queue/rotational"),
+    ] {
         if let Ok(v) = fs::read_to_string(&q) {
-            return if v.trim() == "1" { Disk::Rotational } else { Disk::Solid };
+            return if v.trim() == "1" {
+                Disk::Rotational
+            } else {
+                Disk::Solid
+            };
         }
     }
     Disk::Unknown
@@ -182,7 +214,10 @@ mod tests {
         // Hard-linked files are kept.
         fs::write(tmp.join("a"), b"x").unwrap();
         fs::hard_link(tmp.join("a"), tmp.join("b")).unwrap();
-        assert!(matches!(shred_file(&tmp.join("a")).unwrap(), Shredded::Kept(_)));
+        assert!(matches!(
+            shred_file(&tmp.join("a")).unwrap(),
+            Shredded::Kept(_)
+        ));
         assert!(tmp.join("a").exists());
         // Links are removed, never followed.
         fs::write(tmp.join("target"), b"keep me").unwrap();

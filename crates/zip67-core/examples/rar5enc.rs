@@ -12,10 +12,16 @@ fn main() {
     let data: Vec<(String, Vec<u8>)> = inputs
         .iter()
         .map(|p| {
-            let name = std::path::Path::new(p).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+            let name = std::path::Path::new(p)
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default();
             (name, std::fs::read(p).expect("read input"))
         })
         .collect();
-    let files: Vec<(&str, &[u8])> = data.iter().map(|(n, d)| (n.as_str(), d.as_slice())).collect();
+    let files: Vec<(&str, &[u8])> = data
+        .iter()
+        .map(|(n, d)| (n.as_str(), d.as_slice()))
+        .collect();
     std::fs::write(out, rar5enc::archive(&files)).expect("write output");
 }

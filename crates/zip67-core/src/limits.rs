@@ -28,7 +28,7 @@ impl Default for Limits {
             max_entries: 10_000_000,
             max_total_size: 1 << 44, // 16 TiB
             max_ratio: 20_000,
-            ratio_grace: 1 << 30, // 1 GiB
+            ratio_grace: 1 << 30,        // 1 GiB
             max_decoder_memory: 3 << 30, // 3 GiB
             max_header_size: 1 << 30,
             max_path_len: 16 * 1024,
@@ -39,6 +39,9 @@ impl Default for Limits {
 impl Limits {
     /// Limits without the ratio check (for trusted, self-made archives).
     pub fn relaxed() -> Self {
-        Limits { max_ratio: u64::MAX, ..Default::default() }
+        Limits {
+            max_ratio: u64::MAX,
+            ..Default::default()
+        }
     }
 }

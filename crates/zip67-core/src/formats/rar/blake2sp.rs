@@ -1,7 +1,16 @@
 //! BLAKE2sp, the optional file checksum of RAR5: eight BLAKE2s leaves
 //! hashing interleaved 64-byte blocks, and a root hashing their digests.
 
-const IV: [u32; 8] = [0x6A09_E667, 0xBB67_AE85, 0x3C6E_F372, 0xA54F_F53A, 0x510E_527F, 0x9B05_688C, 0x1F83_D9AB, 0x5BE0_CD19];
+const IV: [u32; 8] = [
+    0x6A09_E667,
+    0xBB67_AE85,
+    0x3C6E_F372,
+    0xA54F_F53A,
+    0x510E_527F,
+    0x9B05_688C,
+    0x1F83_D9AB,
+    0x5BE0_CD19,
+];
 const SIGMA: [[usize; 16]; 10] = [
     [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
     [14, 10, 4, 8, 9, 15, 13, 6, 1, 12, 0, 2, 11, 7, 5, 3],
@@ -27,18 +36,38 @@ struct Blake2s {
 impl Blake2s {
     fn new(node_offset: u32, node_depth: u8, last_node: bool) -> Self {
         // Parameter block: digest 32, no key, fanout 8, depth 2, inner 32.
-        let p = [0x0208_0020u32, 0, node_offset, (u32::from(node_depth) << 16) | (32 << 24), 0, 0, 0, 0];
+        let p = [
+            0x0208_0020u32,
+            0,
+            node_offset,
+            (u32::from(node_depth) << 16) | (32 << 24),
+            0,
+            0,
+            0,
+            0,
+        ];
         let mut h = IV;
         for i in 0..8 {
             h[i] ^= p[i];
         }
-        Blake2s { h, t: 0, buf: [0; 64], len: 0, last_node }
+        Blake2s {
+            h,
+            t: 0,
+            buf: [0; 64],
+            len: 0,
+            last_node,
+        }
     }
 
     fn compress(&mut self, block: &[u8; 64], last: bool) {
         let mut m = [0u32; 16];
         for (i, w) in m.iter_mut().enumerate() {
-            *w = u32::from_le_bytes([block[i * 4], block[i * 4 + 1], block[i * 4 + 2], block[i * 4 + 3]]);
+            *w = u32::from_le_bytes([
+                block[i * 4],
+                block[i * 4 + 1],
+                block[i * 4 + 2],
+                block[i * 4 + 3],
+            ]);
         }
         let mut v = [0u32; 16];
         v[..8].copy_from_slice(&self.h);
@@ -136,7 +165,12 @@ impl Default for Blake2sp {
 
 impl Blake2sp {
     pub fn new() -> Self {
-        Blake2sp { leaves: (0..8).map(|i| Blake2s::new(i, 0, i == 7)).collect(), pending: [0; 64], pending_len: 0, next_leaf: 0 }
+        Blake2sp {
+            leaves: (0..8).map(|i| Blake2s::new(i, 0, i == 7)).collect(),
+            pending: [0; 64],
+            pending_len: 0,
+            next_leaf: 0,
+        }
     }
 
     pub fn update(&mut self, mut data: &[u8]) {
@@ -186,7 +220,10 @@ mod tests {
     #[test]
     fn known_digests() {
         // Reference values from the BLAKE2 test vectors (blake2sp, no key).
-        assert_eq!(hex(&Blake2sp::new().finalize()), "dd0e891776933f43c7d032b08a917e25741f8aa9a12c12e1cac8801500f2ca4f");
+        assert_eq!(
+            hex(&Blake2sp::new().finalize()),
+            "dd0e891776933f43c7d032b08a917e25741f8aa9a12c12e1cac8801500f2ca4f"
+        );
         let data: Vec<u8> = (0..=255u8).collect();
         let mut h = Blake2sp::new();
         h.update(&data);

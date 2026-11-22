@@ -4,9 +4,9 @@ use std::fs;
 use std::process::Command;
 
 use common::*;
-use zip67_core::create::{create, CreateOptions, Method};
-use zip67_core::extract::{test as test_archive, Selection};
-use zip67_core::{open, ArchiveType, Error, OpenOptions, Password, Progress};
+use zip67_core::create::{CreateOptions, Method, create};
+use zip67_core::extract::{Selection, test as test_archive};
+use zip67_core::{ArchiveType, Error, OpenOptions, Password, Progress, open};
 
 fn ours(method: Method, password: Option<&str>, encrypt_names: bool, solid: bool, threads: usize) {
     let tmp = tempfile::tempdir().unwrap();
@@ -31,11 +31,19 @@ fn ours(method: Method, password: Option<&str>, encrypt_names: bool, solid: bool
         c.arg("t").arg(&archive);
         c.arg(format!("-p{}", password.unwrap_or("")));
         let o = c.output().unwrap();
-        assert!(o.status.success(), "7-Zip rejected our 7z ({method:?}): {}", String::from_utf8_lossy(&o.stdout));
+        assert!(
+            o.status.success(),
+            "7-Zip rejected our 7z ({method:?}): {}",
+            String::from_utf8_lossy(&o.stdout)
+        );
         // And 7-Zip's extraction must match the source too.
         let out7 = tmp.path().join("x7");
         let mut c = Command::new(sz);
-        c.arg("x").arg(&archive).arg(format!("-o{}", out7.display())).arg("-y").arg("-snl");
+        c.arg("x")
+            .arg(&archive)
+            .arg(format!("-o{}", out7.display()))
+            .arg("-y")
+            .arg("-snl");
         c.arg(format!("-p{}", password.unwrap_or("")));
         assert!(c.output().unwrap().status.success());
         assert_same_tree(&src, &out7.join("data"));
@@ -88,11 +96,37 @@ fn encrypted_names_need_password() {
     let tmp = tempfile::tempdir().unwrap();
     let src = make_tree(tmp.path());
     let archive = tmp.path().join("h.7z");
-    let o = CreateOptions { archive_type: ArchiveType::SEVEN_Z, password: Some(Password::new("pw")), encrypt_names: true, ..Default::default() };
+    let o = CreateOptions {
+        archive_type: ArchiveType::SEVEN_Z,
+        password: Some(Password::new("pw")),
+        encrypt_names: true,
+        ..Default::default()
+    };
     create(&archive, &[src], &o, &Progress::new()).unwrap();
-    assert!(matches!(open(&archive, &OpenOptions::default()), Err(Error::PasswordRequired)));
-    assert!(matches!(open(&archive, &OpenOptions { password: Some(Password::new("nope")), ..Default::default() }), Err(Error::WrongPassword)));
-    assert!(open(&archive, &OpenOptions { password: Some(Password::new("pw")), ..Default::default() }).is_ok());
+    assert!(matches!(
+        open(&archive, &OpenOptions::default()),
+        Err(Error::PasswordRequired)
+    ));
+    assert!(matches!(
+        open(
+            &archive,
+            &OpenOptions {
+                password: Some(Password::new("nope")),
+                ..Default::default()
+            }
+        ),
+        Err(Error::WrongPassword)
+    ));
+    assert!(
+        open(
+            &archive,
+            &OpenOptions {
+                password: Some(Password::new("pw")),
+                ..Default::default()
+            }
+        )
+        .is_ok()
+    );
 }
 
 #[test]
@@ -100,12 +134,27 @@ fn wrong_password_on_data() {
     let tmp = tempfile::tempdir().unwrap();
     let src = make_tree(tmp.path());
     let archive = tmp.path().join("d.7z");
-    let o = CreateOptions { archive_type: ArchiveType::SEVEN_Z, password: Some(Password::new("pw")), ..Default::default() };
+    let o = CreateOptions {
+        archive_type: ArchiveType::SEVEN_Z,
+        password: Some(Password::new("pw")),
+        ..Default::default()
+    };
     create(&archive, &[src], &o, &Progress::new()).unwrap();
-    let mut r = open(&archive, &OpenOptions { password: Some(Password::new("bad")), ..Default::default() }).unwrap();
+    let mut r = open(
+        &archive,
+        &OpenOptions {
+            password: Some(Password::new("bad")),
+            ..Default::default()
+        },
+    )
+    .unwrap();
     let rep = test_archive(r.as_mut(), &Selection::All, &Progress::new()).unwrap();
     assert!(!rep.errors.is_empty());
-    assert!(rep.errors.iter().all(|(_, e)| e.contains("wrong password")), "{:?}", rep.errors);
+    assert!(
+        rep.errors.iter().all(|(_, e)| e.contains("wrong password")),
+        "{:?}",
+        rep.errors
+    );
 }
 
 #[test]
@@ -124,7 +173,13 @@ fn reads_7zip_archives() {
         ("deflate.7z", &["-m0=deflate"], None),
         ("copy.7z", &["-m0=copy"], None),
         ("bcj.7z", &["-mf=BCJ"], None),
-        ("bcj2.7z", &["-m0=BCJ2", "-m1=LZMA", "-m2=LZMA", "-m3=LZMA", "-mb0:1", "-mb0s1:2", "-mb0s2:3"], None),
+        (
+            "bcj2.7z",
+            &[
+                "-m0=BCJ2", "-m1=LZMA", "-m2=LZMA", "-m3=LZMA", "-mb0:1", "-mb0s1:2", "-mb0s2:3",
+            ],
+            None,
+        ),
         ("arm64.7z", &["-mf=ARM64"], None),
         ("delta.7z", &["-mf=Delta:4"], None),
         ("nonsolid.7z", &["-ms=off"], None),
@@ -135,8 +190,20 @@ fn reads_7zip_archives() {
     ];
     for (name, args, pw) in cases {
         let archive = tmp.path().join(name);
-        let o = Command::new(sz).current_dir(tmp.path()).arg("a").args(*args).arg("-snl").arg(&archive).arg("data").output().unwrap();
-        assert!(o.status.success(), "7z failed for {name}: {}", String::from_utf8_lossy(&o.stdout));
+        let o = Command::new(sz)
+            .current_dir(tmp.path())
+            .arg("a")
+            .args(*args)
+            .arg("-snl")
+            .arg(&archive)
+            .arg("data")
+            .output()
+            .unwrap();
+        assert!(
+            o.status.success(),
+            "7z failed for {name}: {}",
+            String::from_utf8_lossy(&o.stdout)
+        );
         let out = tmp.path().join(format!("x-{name}"));
         let rep = extract_all(&archive, &out, *pw);
         assert!(rep.errors.is_empty(), "{name}: {:?}", rep.errors);
@@ -149,7 +216,13 @@ fn update_7z_keeps_everything() {
     let tmp = tempfile::tempdir().unwrap();
     let src = make_tree(tmp.path());
     let archive = tmp.path().join("u.7z");
-    create(&archive, &[src.clone()], &CreateOptions::default(), &Progress::new()).unwrap();
+    create(
+        &archive,
+        &[src.clone()],
+        &CreateOptions::default(),
+        &Progress::new(),
+    )
+    .unwrap();
     // Add a file, delete one, rename one.
     let extra = tmp.path().join("extra.txt");
     fs::write(&extra, b"new file").unwrap();
@@ -169,6 +242,9 @@ fn update_7z_keeps_everything() {
     assert!(!names.contains(&"data/run.sh"));
     let out = tmp.path().join("x");
     extract_all(&archive, &out, None);
-    assert_eq!(fs::read(out.join("data/sub/random.bin")).unwrap(), fs::read(src.join("sub/random.bin")).unwrap());
+    assert_eq!(
+        fs::read(out.join("data/sub/random.bin")).unwrap(),
+        fs::read(src.join("sub/random.bin")).unwrap()
+    );
     assert_eq!(fs::read(out.join("data/extra.txt")).unwrap(), b"new file");
 }

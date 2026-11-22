@@ -27,7 +27,11 @@ struct Bits {
 
 impl Bits {
     fn new() -> Self {
-        Bits { out: Vec::new(), acc: 0, n: 0 }
+        Bits {
+            out: Vec::new(),
+            acc: 0,
+            n: 0,
+        }
     }
     fn put(&mut self, v: u32, bits: u32) {
         if bits == 0 {
@@ -55,7 +59,12 @@ impl Bits {
 fn lengths(freq: &[u32]) -> Vec<u8> {
     let mut f: Vec<u64> = freq.iter().map(|&x| u64::from(x)).collect();
     loop {
-        let mut nodes: Vec<(u64, Vec<usize>)> = f.iter().enumerate().filter(|&(_, &x)| x > 0).map(|(i, &x)| (x, vec![i])).collect();
+        let mut nodes: Vec<(u64, Vec<usize>)> = f
+            .iter()
+            .enumerate()
+            .filter(|&(_, &x)| x > 0)
+            .map(|(i, &x)| (x, vec![i]))
+            .collect();
         let mut len = vec![0u8; f.len()];
         if nodes.len() == 1 {
             len[nodes[0].1[0]] = 1;
@@ -95,7 +104,17 @@ fn codes(len: &[u8]) -> Vec<u32> {
         code = (code + count[l - 1]) << 1;
         next[l] = code;
     }
-    len.iter().map(|&l| if l == 0 { 0 } else { let c = next[l as usize]; next[l as usize] += 1; c }).collect()
+    len.iter()
+        .map(|&l| {
+            if l == 0 {
+                0
+            } else {
+                let c = next[l as usize];
+                next[l as usize] += 1;
+                c
+            }
+        })
+        .collect()
 }
 
 fn len_slot(len: u32) -> (u32, u32, u32) {
@@ -134,7 +153,11 @@ fn parse(data: &[u8]) -> Vec<Sym> {
     const HBITS: u32 = 20;
     let mut head = vec![u32::MAX; 1 << HBITS];
     let mut prev = vec![u32::MAX; data.len()];
-    let hash = |p: usize| -> usize { ((u32::from_le_bytes([data[p], data[p + 1], data[p + 2], data[p + 3]]).wrapping_mul(0x9E37_79B1)) >> (32 - HBITS)) as usize };
+    let hash = |p: usize| -> usize {
+        ((u32::from_le_bytes([data[p], data[p + 1], data[p + 2], data[p + 3]])
+            .wrapping_mul(0x9E37_79B1))
+            >> (32 - HBITS)) as usize
+    };
     let mut out = Vec::with_capacity(data.len() / 3);
     let mut old = [0u32; 4];
     let mut i = 0usize;
@@ -220,7 +243,12 @@ fn parse(data: &[u8]) -> Vec<Sym> {
 }
 
 fn encode_block(syms: &[Sym], last: bool, out: &mut Vec<u8>) {
-    let (mut fm, mut fd, mut fl, mut fr) = (vec![0u32; NC], vec![0u32; DC], vec![0u32; LDC], vec![0u32; RC]);
+    let (mut fm, mut fd, mut fl, mut fr) = (
+        vec![0u32; NC],
+        vec![0u32; DC],
+        vec![0u32; LDC],
+        vec![0u32; RC],
+    );
     for s in syms {
         match *s {
             Sym::Lit(b) => fm[b as usize] += 1,
@@ -239,7 +267,13 @@ fn encode_block(syms: &[Sym], last: bool, out: &mut Vec<u8>) {
         }
     }
     let (lm, ld, ll, lr) = (lengths(&fm), lengths(&fd), lengths(&fl), lengths(&fr));
-    let all: Vec<u8> = lm.iter().chain(&ld).chain(&ll).chain(&lr).copied().collect();
+    let all: Vec<u8> = lm
+        .iter()
+        .chain(&ld)
+        .chain(&ll)
+        .chain(&lr)
+        .copied()
+        .collect();
     let mut bf = vec![0u32; 20];
     for &l in &all {
         bf[l as usize] += 1;
@@ -291,7 +325,13 @@ fn encode_block(syms: &[Sym], last: bool, out: &mut Vec<u8>) {
     let bit_size = (bits - (u64::from(size) - 1) * 8) as u8;
     let flags = (bit_size - 1) | (2 << 3) | if last { 0x40 } else { 0 } | 0x80;
     let check = 0x5a ^ flags ^ (size as u8) ^ ((size >> 8) as u8) ^ ((size >> 16) as u8);
-    out.extend_from_slice(&[flags, check, size as u8, (size >> 8) as u8, (size >> 16) as u8]);
+    out.extend_from_slice(&[
+        flags,
+        check,
+        size as u8,
+        (size >> 8) as u8,
+        (size >> 16) as u8,
+    ]);
     out.extend_from_slice(&data);
 }
 

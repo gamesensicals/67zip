@@ -49,13 +49,19 @@ pub fn kind_of(name: &str, is_dir: bool, exec: bool) -> Kind {
     if zip67_core::ArchiveType::from_file_name(name).is_some() {
         return Kind::Archive;
     }
-    let ext = name.rsplit_once('.').map(|(_, e)| e.to_ascii_lowercase()).unwrap_or_default();
+    let ext = name
+        .rsplit_once('.')
+        .map(|(_, e)| e.to_ascii_lowercase())
+        .unwrap_or_default();
     match ext.as_str() {
-        "png" | "jpg" | "jpeg" | "gif" | "webp" | "bmp" | "svg" | "tif" | "tiff" | "heic" | "avif" | "ico" => Kind::Image,
+        "png" | "jpg" | "jpeg" | "gif" | "webp" | "bmp" | "svg" | "tif" | "tiff" | "heic"
+        | "avif" | "ico" => Kind::Image,
         "mp3" | "flac" | "ogg" | "opus" | "wav" | "m4a" | "aac" => Kind::Audio,
         "mp4" | "mkv" | "webm" | "avi" | "mov" | "m4v" => Kind::Video,
-        "txt" | "md" | "log" | "csv" | "ini" | "cfg" | "conf" | "toml" | "yaml" | "yml" | "json" | "xml" | "rtf" => Kind::Text,
-        "rs" | "c" | "h" | "cpp" | "hpp" | "py" | "js" | "ts" | "go" | "java" | "kt" | "sh" | "rb" | "php" | "html" | "css" | "lua" | "zig" => Kind::Code,
+        "txt" | "md" | "log" | "csv" | "ini" | "cfg" | "conf" | "toml" | "yaml" | "yml"
+        | "json" | "xml" | "rtf" => Kind::Text,
+        "rs" | "c" | "h" | "cpp" | "hpp" | "py" | "js" | "ts" | "go" | "java" | "kt" | "sh"
+        | "rb" | "php" | "html" | "css" | "lua" | "zig" => Kind::Code,
         "pdf" => Kind::Pdf,
         "exe" | "dll" | "so" | "appimage" | "bin" | "run" | "deb" | "rpm" => Kind::Exec,
         _ if exec => Kind::Exec,
@@ -66,11 +72,17 @@ pub fn kind_of(name: &str, is_dir: bool, exec: bool) -> Kind {
 pub fn type_label(r: &Row) -> String {
     if !r.is_dir {
         if let Some(p) = zip67_core::source::parse_part_name(&r.name) {
-            let t = zip67_core::ArchiveType::from_plain_name(&p.logical).map(|t| t.display_name()).unwrap_or_else(|| "Split file".into());
+            let t = zip67_core::ArchiveType::from_plain_name(&p.logical)
+                .map(|t| t.display_name())
+                .unwrap_or_else(|| "Split file".into());
             return format!("{t}, part {}", p.number);
         }
         // The .zip of a PKZIP split archive is its last part.
-        if r.name.to_ascii_lowercase().ends_with(".zip") && ["z01", "Z01"].iter().any(|z| r.path.with_extension(z).is_file()) {
+        if r.name.to_ascii_lowercase().ends_with(".zip")
+            && ["z01", "Z01"]
+                .iter()
+                .any(|z| r.path.with_extension(z).is_file())
+        {
             return "Zip, last part".into();
         }
     }
@@ -78,7 +90,9 @@ pub fn type_label(r: &Row) -> String {
         Kind::Folder => "Folder".into(),
         Kind::Link => "Link".into(),
         _ => match r.name.rsplit_once('.') {
-            Some((stem, e)) if !stem.is_empty() && e.len() <= 8 => format!("{} file", e.to_ascii_uppercase()),
+            Some((stem, e)) if !stem.is_empty() && e.len() <= 8 => {
+                format!("{} file", e.to_ascii_uppercase())
+            }
             _ => "File".into(),
         },
     }
@@ -155,7 +169,9 @@ pub fn list_dir(dir: &Path, show_hidden: bool) -> std::io::Result<Vec<Row>> {
         let is_link = lmd.map(|m| m.file_type().is_symlink()).unwrap_or(false);
         r.kind = kind_of(&r.name, r.is_dir, r.mode.is_some_and(|m| m & 0o111 != 0));
         if is_link {
-            r.link_target = std::fs::read_link(&path).ok().map(|p| p.to_string_lossy().into_owned());
+            r.link_target = std::fs::read_link(&path)
+                .ok()
+                .map(|p| p.to_string_lossy().into_owned());
             if !r.is_dir {
                 r.kind = Kind::Link;
             }
@@ -189,9 +205,18 @@ impl Tree {
             let mut cur = String::new();
             for (i, p) in parts.iter().enumerate() {
                 let last = i == parts.len() - 1;
-                let child_path = if cur.is_empty() { (*p).to_string() } else { format!("{cur}/{p}") };
+                let child_path = if cur.is_empty() {
+                    (*p).to_string()
+                } else {
+                    format!("{cur}/{p}")
+                };
                 let is_dir = !last || e.kind == EntryKind::Dir;
-                let slot = t.dirs.entry(cur.clone()).or_default().entry((*p).to_string()).or_insert((is_dir, None));
+                let slot = t
+                    .dirs
+                    .entry(cur.clone())
+                    .or_default()
+                    .entry((*p).to_string())
+                    .or_insert((is_dir, None));
                 if last {
                     slot.1 = Some(e.index);
                     slot.0 = is_dir || slot.0;
@@ -220,10 +245,16 @@ impl Tree {
 
     /// Rows for one folder of the archive.
     pub fn rows(&self, entries: &[Entry], folder: &str) -> Vec<Row> {
-        let Some(children) = self.dirs.get(folder) else { return Vec::new() };
+        let Some(children) = self.dirs.get(folder) else {
+            return Vec::new();
+        };
         let mut out = Vec::with_capacity(children.len());
         for (name, &(is_dir, idx)) in children {
-            let arc_path = if folder.is_empty() { name.clone() } else { format!("{folder}/{name}") };
+            let arc_path = if folder.is_empty() {
+                name.clone()
+            } else {
+                format!("{folder}/{name}")
+            };
             let mut r = row(name.clone());
             r.is_dir = is_dir;
             r.arc_path = arc_path.clone();
@@ -249,8 +280,14 @@ impl Tree {
                     }
                 }
             }
-            let link = idx.and_then(|i| entries.get(i)).is_some_and(|e| e.kind == EntryKind::Symlink);
-            r.kind = if link { Kind::Link } else { kind_of(&r.name, is_dir, r.mode.is_some_and(|m| m & 0o111 != 0)) };
+            let link = idx
+                .and_then(|i| entries.get(i))
+                .is_some_and(|e| e.kind == EntryKind::Symlink);
+            r.kind = if link {
+                Kind::Link
+            } else {
+                kind_of(&r.name, is_dir, r.mode.is_some_and(|m| m & 0o111 != 0))
+            };
             out.push(r);
         }
         out
@@ -277,7 +314,9 @@ pub fn sort(rows: &mut [Row], key: SortKey, ascending: bool) {
             SortKey::Size => a.size.cmp(&b.size),
             SortKey::Packed => a.packed.cmp(&b.packed),
             SortKey::Modified => a.mtime.cmp(&b.mtime),
-            SortKey::Type => type_label(a).cmp(&type_label(b)).then_with(|| natural_cmp(&a.name, &b.name)),
+            SortKey::Type => type_label(a)
+                .cmp(&type_label(b))
+                .then_with(|| natural_cmp(&a.name, &b.name)),
         };
         if ascending { ord } else { ord.reverse() }
     });
@@ -302,7 +341,11 @@ pub fn natural_cmp(a: &str, b: &str) -> std::cmp::Ordering {
                     nb.push(*c);
                     bi.next();
                 }
-                let o = na.trim_start_matches('0').len().cmp(&nb.trim_start_matches('0').len()).then_with(|| na.trim_start_matches('0').cmp(nb.trim_start_matches('0')));
+                let o = na
+                    .trim_start_matches('0')
+                    .len()
+                    .cmp(&nb.trim_start_matches('0').len())
+                    .then_with(|| na.trim_start_matches('0').cmp(nb.trim_start_matches('0')));
                 if o != std::cmp::Ordering::Equal {
                     return o;
                 }

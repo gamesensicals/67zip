@@ -31,7 +31,13 @@ fn strip_suffix(name: &str, c: Compression) -> String {
 }
 
 impl RawReader {
-    pub fn open(mut src: Box<dyn ReadSeek>, size: u64, archive_name: &str, compression: Compression, opts: &OpenOptions) -> Result<Self> {
+    pub fn open(
+        mut src: Box<dyn ReadSeek>,
+        size: u64,
+        archive_name: &str,
+        compression: Compression,
+        opts: &OpenOptions,
+    ) -> Result<Self> {
         let mut name = strip_suffix(archive_name, compression);
         let mut mtime = None;
         let mut usize = 0u64;
@@ -74,7 +80,13 @@ impl RawReader {
         e.packed_size = Some(size);
         e.mtime = mtime;
         e.method = Some(compression.display().into());
-        Ok(RawReader { src, size, compression, entries: vec![e], limits: opts.limits.clone() })
+        Ok(RawReader {
+            src,
+            size,
+            compression,
+            entries: vec![e],
+            limits: opts.limits.clone(),
+        })
     }
 }
 
@@ -95,7 +107,12 @@ impl ArchiveReader for RawReader {
             ..Default::default()
         }
     }
-    fn extract(&mut self, selected: &dyn Fn(&Entry) -> bool, visitor: &mut dyn EntryVisitor, progress: &Progress) -> Result<()> {
+    fn extract(
+        &mut self,
+        selected: &dyn Fn(&Entry) -> bool,
+        visitor: &mut dyn EntryVisitor,
+        progress: &Progress,
+    ) -> Result<()> {
         let entry = self.entries[0].clone();
         if !selected(&entry) {
             return Ok(());
@@ -104,7 +121,11 @@ impl ArchiveReader for RawReader {
         progress.set_current(&entry.path);
         let packed = Progressed::packed(&mut self.src, progress);
         let dec = codecs::decoder(self.compression, Box::new(packed), &self.limits)?;
-        let expected = if entry.size_known { Some(entry.size) } else { None };
+        let expected = if entry.size_known {
+            Some(entry.size)
+        } else {
+            None
+        };
         let guarded = SizeGuard::new(dec, expected, self.limits.max_total_size);
         let mut r = Progressed::new(guarded, progress);
         visitor.file(&entry, &mut r)?;
@@ -119,28 +140,49 @@ pub struct RawWriter {
 }
 
 impl RawWriter {
-    pub fn new(file: std::fs::File, c: Compression, level: u32, threads: usize, name: Option<&str>, size_hint: Option<u64>) -> Result<Self> {
+    pub fn new(
+        file: std::fs::File,
+        c: Compression,
+        level: u32,
+        threads: usize,
+        name: Option<&str>,
+        size_hint: Option<u64>,
+    ) -> Result<Self> {
         let base = name.and_then(|n| n.rsplit('/').next());
-        let buffered: codecs::BoxWrite<'static> = Box::new(io::BufWriter::with_capacity(256 * 1024, file));
-        Ok(RawWriter { out: Some(codecs::encoder_sized(c, buffered, level, threads, base, 0, size_hint)?), written: false })
+        let buffered: codecs::BoxWrite<'static> =
+            Box::new(io::BufWriter::with_capacity(256 * 1024, file));
+        Ok(RawWriter {
+            out: Some(codecs::encoder_sized(
+                c, buffered, level, threads, base, 0, size_hint,
+            )?),
+            written: false,
+        })
     }
 }
 
 impl ArchiveWriter for RawWriter {
     fn add(&mut self, item: &Item, data: Option<&mut dyn Read>, progress: &Progress) -> Result<()> {
         if item.kind != EntryKind::File {
-            return Err(Error::invalid("only a single file can be compressed into this format"));
+            return Err(Error::invalid(
+                "only a single file can be compressed into this format",
+            ));
         }
         if self.written {
             return Err(Error::invalid("this format holds exactly one file"));
         }
         self.written = true;
-        let w = self.out.as_mut().ok_or_else(|| Error::invalid("finished"))?;
+        let w = self
+            .out
+            .as_mut()
+            .ok_or_else(|| Error::invalid("finished"))?;
         let r = data.ok_or_else(|| Error::invalid("file data missing"))?;
         crate::create::pump(r, w, progress)?;
         Ok(())
     }
     fn finish(mut self: Box<Self>, _progress: &Progress) -> Result<()> {
-        self.out.take().ok_or_else(|| Error::invalid("finished"))?.finish_box()
+        self.out
+            .take()
+            .ok_or_else(|| Error::invalid("finished"))?
+            .finish_box()
     }
 }

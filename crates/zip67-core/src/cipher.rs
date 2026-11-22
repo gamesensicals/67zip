@@ -18,9 +18,15 @@ pub enum AesKey {
 impl AesKey {
     pub fn new(key: &[u8]) -> Result<Self> {
         Ok(match key.len() {
-            16 => AesKey::A128(Box::new(Aes128::new_from_slice(key).map_err(|_| Error::invalid("bad key"))?)),
-            24 => AesKey::A192(Box::new(Aes192::new_from_slice(key).map_err(|_| Error::invalid("bad key"))?)),
-            32 => AesKey::A256(Box::new(Aes256::new_from_slice(key).map_err(|_| Error::invalid("bad key"))?)),
+            16 => AesKey::A128(Box::new(
+                Aes128::new_from_slice(key).map_err(|_| Error::invalid("bad key"))?,
+            )),
+            24 => AesKey::A192(Box::new(
+                Aes192::new_from_slice(key).map_err(|_| Error::invalid("bad key"))?,
+            )),
+            32 => AesKey::A256(Box::new(
+                Aes256::new_from_slice(key).map_err(|_| Error::invalid("bad key"))?,
+            )),
             _ => return Err(Error::invalid("AES key must be 16, 24 or 32 bytes")),
         })
     }
@@ -41,11 +47,13 @@ impl AesKey {
 }
 
 fn to_blocks(buf: &[u8]) -> Vec<Block> {
-    buf.chunks_exact(16).map(|c| {
-        let mut b = Block::default();
-        b.copy_from_slice(c);
-        b
-    }).collect()
+    buf.chunks_exact(16)
+        .map(|c| {
+            let mut b = Block::default();
+            b.copy_from_slice(c);
+            b
+        })
+        .collect()
 }
 
 /// WinZip-style AES-CTR: 128-bit little-endian counter starting at 1.
@@ -58,7 +66,12 @@ pub struct CtrLe {
 
 impl CtrLe {
     pub fn new(key: AesKey) -> Self {
-        CtrLe { key, counter: 1, stream: [0; 256], pos: 256 }
+        CtrLe {
+            key,
+            counter: 1,
+            stream: [0; 256],
+            pos: 256,
+        }
     }
     fn refill(&mut self) {
         let mut blocks: Vec<Block> = (0..16)
@@ -100,7 +113,14 @@ pub struct CbcDecryptReader<R> {
 
 impl<R: Read> CbcDecryptReader<R> {
     pub fn new(inner: R, key: AesKey, iv: [u8; 16]) -> Self {
-        CbcDecryptReader { inner, key, iv, out: Vec::new(), out_pos: 0, eof: false }
+        CbcDecryptReader {
+            inner,
+            key,
+            iv,
+            out: Vec::new(),
+            out_pos: 0,
+            eof: false,
+        }
     }
 }
 
@@ -152,7 +172,12 @@ pub struct CbcEncryptWriter<W: Write> {
 
 impl<W: Write> CbcEncryptWriter<W> {
     pub fn new(inner: W, key: AesKey, iv: [u8; 16]) -> Self {
-        CbcEncryptWriter { inner, key, iv, pending: Vec::with_capacity(64 * 1024) }
+        CbcEncryptWriter {
+            inner,
+            key,
+            iv,
+            pending: Vec::with_capacity(64 * 1024),
+        }
     }
     fn encrypt_full_blocks(&mut self) -> io::Result<()> {
         let full = self.pending.len() - self.pending.len() % 16;

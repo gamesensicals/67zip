@@ -14,7 +14,11 @@ pub struct ZstdReader<R: BufRead> {
 
 impl<R: BufRead> ZstdReader<R> {
     pub fn new(inner: R, max_window: u64) -> Self {
-        ZstdReader { source: Some(inner), dec: None, max_window }
+        ZstdReader {
+            source: Some(inner),
+            dec: None,
+            max_window,
+        }
     }
 }
 
@@ -34,7 +38,9 @@ impl<R: BufRead> Read for ZstdReader<R> {
                 let dec = self.dec.take().expect("decoder present");
                 self.source = Some(dec.into_inner());
             }
-            let Some(mut src) = self.source.take() else { return Ok(0) };
+            let Some(mut src) = self.source.take() else {
+                return Ok(0);
+            };
             // Skip skippable frames (magic 0x184D2A5?) and stop at anything else.
             loop {
                 let head = src.fill_buf()?;

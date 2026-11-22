@@ -73,7 +73,11 @@ impl Huffman {
             let dist = field.wrapping_sub(self.decode_len[cur - 1]) >> (16 - cur.min(16));
             let num = if cur < 16 {
                 let p = self.decode_pos[cur].wrapping_add(dist);
-                if (p as usize) < size { self.decode_num[p as usize] } else { 0 }
+                if (p as usize) < size {
+                    self.decode_num[p as usize]
+                } else {
+                    0
+                }
             } else {
                 0
             };
@@ -160,7 +164,11 @@ pub fn read_lengths(inp: &mut Input, bd: &Huffman, out: &mut [u8], old: Option<&
             };
             i += 1;
         } else if num < 18 {
-            let count = if num == 16 { inp.bits(3) + 3 } else { inp.bits(7) + 11 };
+            let count = if num == 16 {
+                inp.bits(3) + 3
+            } else {
+                inp.bits(7) + 11
+            };
             if i == 0 {
                 return false;
             }
@@ -172,7 +180,11 @@ pub fn read_lengths(inp: &mut Input, bd: &Huffman, out: &mut [u8], old: Option<&
                 i += 1;
             }
         } else {
-            let count = if num == 18 { inp.bits(3) + 3 } else { inp.bits(7) + 11 };
+            let count = if num == 18 {
+                inp.bits(3) + 3
+            } else {
+                inp.bits(7) + 11
+            };
             for _ in 0..count {
                 if i >= n {
                     break;

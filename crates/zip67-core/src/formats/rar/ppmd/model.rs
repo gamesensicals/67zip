@@ -11,7 +11,9 @@ const EMPTY_NODE: u16 = 0;
 
 static K_EXP_ESCAPE: [u8; 16] = [25, 14, 9, 7, 5, 5, 4, 4, 4, 3, 3, 3, 2, 2, 2, 2];
 
-static K_INIT_BIN_ESC: [u16; 8] = [0x3CDD, 0x1F3F, 0x59BF, 0x48F3, 0x64A1, 0x5ABC, 0x6632, 0x6051];
+static K_INIT_BIN_ESC: [u16; 8] = [
+    0x3CDD, 0x1F3F, 0x59BF, 0x48F3, 0x64A1, 0x5ABC, 0x6632, 0x6051,
+];
 
 /// The context and free node records of PPMd7.
 ///
@@ -253,7 +255,8 @@ impl<RC> PPMd7<RC> {
     }
 
     fn split_block(&mut self, ptr: UnitRef, old_index: u32, new_index: u32) {
-        let nu = (self.index2units[old_index as usize] as u32) - (self.index2units[new_index as usize] as u32);
+        let nu = (self.index2units[old_index as usize] as u32)
+            - (self.index2units[new_index as usize] as u32);
         let ptr = ptr.add_units(self.index2units[new_index as usize] as u32);
         let mut i = self.units2index[(nu as usize) - 1] as u32;
 
@@ -418,7 +421,11 @@ impl<RC> PPMd7<RC> {
         self.glue_count = 0;
 
         self.order_fall = self.max_order;
-        self.init_rl = -(if self.max_order < 12 { self.max_order as i32 } else { 12 }) - 1;
+        self.init_rl = -(if self.max_order < 12 {
+            self.max_order as i32
+        } else {
+            12
+        }) - 1;
         self.run_length = self.init_rl;
         self.prev_success = 0;
 
@@ -471,7 +478,11 @@ impl<RC> PPMd7<RC> {
     /// Returns the state with the given symbol in the stats of a context with more than one
     /// state.
     #[inline(always)]
-    fn find_state<B: AsRef<[u8]> + AsMut<[u8]>>(mem: &Memory<B>, ctx: CtxRef, symbol: u8) -> StateRef {
+    fn find_state<B: AsRef<[u8]> + AsMut<[u8]>>(
+        mem: &Memory<B>,
+        ctx: CtxRef,
+        symbol: u8,
+    ) -> StateRef {
         let mut s = mem.stats(ctx);
         while mem.symbol(s) != symbol {
             s = s.next();
@@ -506,7 +517,11 @@ impl<RC> PPMd7<RC> {
         while !self.mem.suffix(c).is_null() {
             c = self.mem.suffix(c);
 
-            let s = if self.mem.num_stats(c) != 1 { Self::find_state(&self.mem, c, self.mem.symbol(self.found_state)) } else { c.one_state() };
+            let s = if self.mem.num_stats(c) != 1 {
+                Self::find_state(&self.mem, c, self.mem.symbol(self.found_state))
+            } else {
+                c.one_state()
+            };
             let successor = self.mem.successor(s);
             if successor != up_branch {
                 // c is the real record Context here.
@@ -540,7 +555,11 @@ impl<RC> PPMd7<RC> {
             // max(new_freq) = (s.freq + 1), when (s0 == 1)
             // We have a requirement (Context::get_one_state().freq <= 128) in bin_summ
             // so (s.freq < 128) - is a requirement for multi-symbol contexts.
-            1 + (if 2 * cf <= s0 { (5 * cf > s0) as u32 } else { ((2 * cf + s0 - 1) / (2 * s0)) + 1 }) as u8
+            1 + (if 2 * cf <= s0 {
+                (5 * cf > s0) as u32
+            } else {
+                ((2 * cf + s0 - 1) / (2 * s0)) + 1
+            }) as u8
         };
 
         // Create a new single-symbol contexts from low order to high order in loop.
@@ -625,7 +644,8 @@ impl<RC> PPMd7<RC> {
                 }
             }
 
-            self.mem.set_successor(self.found_state, Successor::from(self.min_context));
+            self.mem
+                .set_successor(self.found_state, Successor::from(self.min_context));
             return;
         }
 
@@ -723,7 +743,8 @@ impl<RC> PPMd7<RC> {
                 sum = self.mem.summ_freq(c);
                 // Max increase of escape_freq is 3 here.
                 // Total increase of union2.summ_freq for all symbols is less than 256 here.
-                sum += ((2 * ns1 < ns) as u32) + 2 * ((4 * ns1 <= ns) as u32 & (sum <= 8 * ns1) as u32);
+                sum += ((2 * ns1 < ns) as u32)
+                    + 2 * ((4 * ns1 <= ns) as u32 & (sum <= 8 * ns1) as u32);
             } else {
                 // Instead of 1-symbol context we create 2-symbol context.
                 let Some(s) = self.alloc_units(0) else {
@@ -762,7 +783,10 @@ impl<RC> PPMd7<RC> {
                 sum += 3;
                 // It can add (0, 1, 2) to escape_freq
             } else {
-                cf = 4 + ((cf >= 9 * sf) as u32) + ((cf >= 12 * sf) as u32) + ((cf >= 15 * sf) as u32);
+                cf = 4
+                    + ((cf >= 9 * sf) as u32)
+                    + ((cf >= 12 * sf) as u32)
+                    + ((cf >= 15 * sf) as u32);
                 sum += cf;
             }
 
@@ -878,7 +902,8 @@ impl<RC> PPMd7<RC> {
         }
 
         // escape_freq halving here.
-        self.mem.set_summ_freq(mc, sum_freq + esc_freq - (esc_freq >> 1));
+        self.mem
+            .set_summ_freq(mc, sum_freq + esc_freq - (esc_freq >> 1));
         self.found_state = self.mem.stats(mc);
     }
 
@@ -886,7 +911,8 @@ impl<RC> PPMd7<RC> {
         let num_stats = self.mem.num_stats(self.min_context);
 
         if num_stats != 256 {
-            let (base_context_idx, see_table_hash) = self.calculate_see_table_hash(num_masked, num_stats);
+            let (base_context_idx, see_table_hash) =
+                self.calculate_see_table_hash(num_masked, num_stats);
 
             let see = &mut self.see[base_context_idx][see_table_hash];
 
@@ -923,7 +949,10 @@ impl<RC> PPMd7<RC> {
         let symbol_masking_ratio_hash = 4 * (num_masked > non_masked) as usize;
         let symbol_characteristics_hash = self.hi_bits_flag as usize;
 
-        let see_table_hash = context_hierarchy_hash + freq_distribution_hash + symbol_masking_ratio_hash + symbol_characteristics_hash;
+        let see_table_hash = context_hierarchy_hash
+            + freq_distribution_hash
+            + symbol_masking_ratio_hash
+            + symbol_characteristics_hash;
 
         (base_context_idx, see_table_hash)
     }
@@ -998,7 +1027,11 @@ impl<RC> PPMd7<RC> {
     }
 
     fn mask_symbols(&self, char_mask: &mut [u8; 256], stats: StateRef, num_stats: u32) {
-        for state in self.mem.states(stats, num_stats).chunks_exact(STATE_SIZE as usize) {
+        for state in self
+            .mem
+            .states(stats, num_stats)
+            .chunks_exact(STATE_SIZE as usize)
+        {
             char_mask[state[0] as usize] = 0;
         }
     }
@@ -1024,8 +1057,11 @@ impl<RC> PPMd7<RC> {
 
         let num_stats = self.mem.num_stats(self.mem.suffix(self.min_context)) as usize;
 
-        let context_idx =
-            (self.prev_success + ((self.run_length as u32 >> 26) & 0x20) + self.ns2bs_index[num_stats - 1] as u32 + hi_bits_flag4 + hi_bits_flag3) as usize;
+        let context_idx = (self.prev_success
+            + ((self.run_length as u32 >> 26) & 0x20)
+            + self.ns2bs_index[num_stats - 1] as u32
+            + hi_bits_flag4
+            + hi_bits_flag3) as usize;
 
         &mut self.bin_summ[freq_bin_idx - 1][context_idx]
     }
@@ -1033,7 +1069,11 @@ impl<RC> PPMd7<RC> {
 
 impl PPMd7<RangeDecoder7a> {
     /// A new model with a range decoder that reads its first bytes from `src`.
-    pub(crate) fn new_decoder_7a(src: &mut dyn ByteSource, order: u32, mem_size: u32) -> Result<Self, Error> {
+    pub(crate) fn new_decoder_7a(
+        src: &mut dyn ByteSource,
+        order: u32,
+        mem_size: u32,
+    ) -> Result<Self, Error> {
         let range_decoder = RangeDecoder7a::new(src)?;
         Self::construct(range_decoder, order, mem_size)
     }

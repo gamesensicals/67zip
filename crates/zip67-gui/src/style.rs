@@ -3,7 +3,7 @@
 //! on every distribution and desktop.
 
 use iced::widget::{button, container, scrollable, text_input};
-use iced::{border, Background, Border, Color, Shadow, Theme, Vector};
+use iced::{Background, Border, Color, Shadow, Theme, Vector, border};
 
 pub const ACCENTS: [(&str, Color); 8] = [
     ("Blue", rgb(0x3b, 0x82, 0xf6)),
@@ -17,7 +17,12 @@ pub const ACCENTS: [(&str, Color); 8] = [
 ];
 
 pub const fn rgb(r: u8, g: u8, b: u8) -> Color {
-    Color { r: r as f32 / 255.0, g: g as f32 / 255.0, b: b as f32 / 255.0, a: 1.0 }
+    Color {
+        r: r as f32 / 255.0,
+        g: g as f32 / 255.0,
+        b: b as f32 / 255.0,
+        a: 1.0,
+    }
 }
 
 pub fn with_alpha(c: Color, a: f32) -> Color {
@@ -25,7 +30,12 @@ pub fn with_alpha(c: Color, a: f32) -> Color {
 }
 
 pub fn mix(a: Color, b: Color, t: f32) -> Color {
-    Color { r: a.r + (b.r - a.r) * t, g: a.g + (b.g - a.g) * t, b: a.b + (b.b - a.b) * t, a: a.a + (b.a - a.a) * t }
+    Color {
+        r: a.r + (b.r - a.r) * t,
+        g: a.g + (b.g - a.g) * t,
+        b: a.b + (b.b - a.b) * t,
+        a: a.a + (b.a - a.a) * t,
+    }
 }
 
 /// Builds the 67zip theme.
@@ -59,40 +69,74 @@ pub fn is_dark(theme: &Theme) -> bool {
 /// Surface colour of panels (toolbar, sidebar, dialogs).
 pub fn surface(theme: &Theme) -> Color {
     let p = theme.extended_palette();
-    if p.is_dark { rgb(0x23, 0x27, 0x2e) } else { Color::WHITE }
+    if p.is_dark {
+        rgb(0x23, 0x27, 0x2e)
+    } else {
+        Color::WHITE
+    }
 }
 
 pub fn border_color(theme: &Theme) -> Color {
-    if is_dark(theme) { rgb(0x34, 0x39, 0x42) } else { rgb(0xe1, 0xe4, 0xe8) }
+    if is_dark(theme) {
+        rgb(0x34, 0x39, 0x42)
+    } else {
+        rgb(0xe1, 0xe4, 0xe8)
+    }
 }
 
 pub fn muted_text(theme: &Theme) -> Color {
-    if is_dark(theme) { rgb(0x9a, 0xa1, 0xac) } else { rgb(0x66, 0x6d, 0x78) }
+    if is_dark(theme) {
+        rgb(0x9a, 0xa1, 0xac)
+    } else {
+        rgb(0x66, 0x6d, 0x78)
+    }
 }
 
 pub fn panel(theme: &Theme) -> container::Style {
-    container::Style { background: Some(Background::Color(surface(theme))), ..Default::default() }
+    container::Style {
+        background: Some(Background::Color(surface(theme))),
+        ..Default::default()
+    }
 }
 
 pub fn toolbar(theme: &Theme) -> container::Style {
     container::Style {
         background: Some(Background::Color(surface(theme))),
-        border: Border { color: border_color(theme), width: 0.0, radius: 0.0.into() },
-        shadow: Shadow { color: with_alpha(Color::BLACK, if is_dark(theme) { 0.35 } else { 0.06 }), offset: Vector::new(0.0, 1.0), blur_radius: 3.0 },
+        border: Border {
+            color: border_color(theme),
+            width: 0.0,
+            radius: 0.0.into(),
+        },
+        shadow: Shadow {
+            color: with_alpha(Color::BLACK, if is_dark(theme) { 0.35 } else { 0.06 }),
+            offset: Vector::new(0.0, 1.0),
+            blur_radius: 3.0,
+        },
         ..Default::default()
     }
 }
 
 pub fn sidebar(theme: &Theme) -> container::Style {
-    let bg = if is_dark(theme) { rgb(0x1f, 0x22, 0x29) } else { rgb(0xef, 0xf1, 0xf4) };
-    container::Style { background: Some(Background::Color(bg)), ..Default::default() }
+    let bg = if is_dark(theme) {
+        rgb(0x1f, 0x22, 0x29)
+    } else {
+        rgb(0xef, 0xf1, 0xf4)
+    };
+    container::Style {
+        background: Some(Background::Color(bg)),
+        ..Default::default()
+    }
 }
 
 pub fn status_bar(theme: &Theme) -> container::Style {
     container::Style {
         background: Some(Background::Color(surface(theme))),
         text_color: Some(muted_text(theme)),
-        border: Border { color: border_color(theme), width: 1.0, radius: 0.0.into() },
+        border: Border {
+            color: border_color(theme),
+            width: 1.0,
+            radius: 0.0.into(),
+        },
         ..Default::default()
     }
 }
@@ -101,32 +145,61 @@ pub fn list_header(theme: &Theme) -> container::Style {
     container::Style {
         background: Some(Background::Color(surface(theme))),
         text_color: Some(muted_text(theme)),
-        border: Border { color: border_color(theme), width: 1.0, radius: 0.0.into() },
+        border: Border {
+            color: border_color(theme),
+            width: 1.0,
+            radius: 0.0.into(),
+        },
         ..Default::default()
     }
 }
 
 pub fn list_area(theme: &Theme) -> container::Style {
-    container::Style { background: Some(Background::Color(theme.palette().background)), ..Default::default() }
+    container::Style {
+        background: Some(Background::Color(theme.palette().background)),
+        ..Default::default()
+    }
 }
 
 pub fn row(theme: &Theme, selected: bool, odd: bool) -> container::Style {
     let p = theme.extended_palette();
     let bg = if selected {
-        Some(Background::Color(with_alpha(p.primary.base.color, if p.is_dark { 0.38 } else { 0.18 })))
+        Some(Background::Color(with_alpha(
+            p.primary.base.color,
+            if p.is_dark { 0.38 } else { 0.18 },
+        )))
     } else if odd {
-        Some(Background::Color(if p.is_dark { rgb(0x1f, 0x22, 0x29) } else { rgb(0xfb, 0xfb, 0xfc) }))
+        Some(Background::Color(if p.is_dark {
+            rgb(0x1f, 0x22, 0x29)
+        } else {
+            rgb(0xfb, 0xfb, 0xfc)
+        }))
     } else {
         None
     };
-    container::Style { background: bg, border: Border { radius: 6.0.into(), ..Default::default() }, ..Default::default() }
+    container::Style {
+        background: bg,
+        border: Border {
+            radius: 6.0.into(),
+            ..Default::default()
+        },
+        ..Default::default()
+    }
 }
 
 pub fn card(theme: &Theme) -> container::Style {
     container::Style {
         background: Some(Background::Color(surface(theme))),
-        border: Border { color: border_color(theme), width: 1.0, radius: 14.0.into() },
-        shadow: Shadow { color: with_alpha(Color::BLACK, 0.35), offset: Vector::new(0.0, 8.0), blur_radius: 32.0 },
+        border: Border {
+            color: border_color(theme),
+            width: 1.0,
+            radius: 14.0.into(),
+        },
+        shadow: Shadow {
+            color: with_alpha(Color::BLACK, 0.35),
+            offset: Vector::new(0.0, 8.0),
+            blur_radius: 32.0,
+        },
         ..Default::default()
     }
 }
@@ -134,14 +207,25 @@ pub fn card(theme: &Theme) -> container::Style {
 pub fn menu(theme: &Theme) -> container::Style {
     container::Style {
         background: Some(Background::Color(surface(theme))),
-        border: Border { color: border_color(theme), width: 1.0, radius: 10.0.into() },
-        shadow: Shadow { color: with_alpha(Color::BLACK, 0.30), offset: Vector::new(0.0, 4.0), blur_radius: 18.0 },
+        border: Border {
+            color: border_color(theme),
+            width: 1.0,
+            radius: 10.0.into(),
+        },
+        shadow: Shadow {
+            color: with_alpha(Color::BLACK, 0.30),
+            offset: Vector::new(0.0, 4.0),
+            blur_radius: 18.0,
+        },
         ..Default::default()
     }
 }
 
 pub fn backdrop(_theme: &Theme) -> container::Style {
-    container::Style { background: Some(Background::Color(with_alpha(Color::BLACK, 0.45))), ..Default::default() }
+    container::Style {
+        background: Some(Background::Color(with_alpha(Color::BLACK, 0.45))),
+        ..Default::default()
+    }
 }
 
 pub fn badge(theme: &Theme, color: Color) -> container::Style {
@@ -149,7 +233,10 @@ pub fn badge(theme: &Theme, color: Color) -> container::Style {
     container::Style {
         background: Some(Background::Color(with_alpha(color, 0.16))),
         text_color: Some(color),
-        border: Border { radius: 999.0.into(), ..Default::default() },
+        border: Border {
+            radius: 999.0.into(),
+            ..Default::default()
+        },
         ..Default::default()
     }
 }
@@ -158,16 +245,28 @@ pub fn warning_box(theme: &Theme) -> container::Style {
     let c = theme.palette().warning;
     container::Style {
         background: Some(Background::Color(with_alpha(c, 0.12))),
-        border: Border { color: with_alpha(c, 0.4), width: 1.0, radius: 8.0.into() },
+        border: Border {
+            color: with_alpha(c, 0.4),
+            width: 1.0,
+            radius: 8.0.into(),
+        },
         ..Default::default()
     }
 }
 
 pub fn address(theme: &Theme) -> container::Style {
-    let bg = if is_dark(theme) { rgb(0x1b, 0x1e, 0x24) } else { rgb(0xf2, 0xf4, 0xf7) };
+    let bg = if is_dark(theme) {
+        rgb(0x1b, 0x1e, 0x24)
+    } else {
+        rgb(0xf2, 0xf4, 0xf7)
+    };
     container::Style {
         background: Some(Background::Color(bg)),
-        border: Border { color: border_color(theme), width: 1.0, radius: 8.0.into() },
+        border: Border {
+            color: border_color(theme),
+            width: 1.0,
+            radius: 8.0.into(),
+        },
         ..Default::default()
     }
 }
@@ -175,8 +274,16 @@ pub fn address(theme: &Theme) -> container::Style {
 /// Flat toolbar / icon button: transparent until hovered.
 pub fn tool_button(theme: &Theme, status: button::Status) -> button::Style {
     let text = theme.palette().text;
-    let hover = if is_dark(theme) { with_alpha(Color::WHITE, 0.07) } else { with_alpha(Color::BLACK, 0.05) };
-    let pressed = if is_dark(theme) { with_alpha(Color::WHITE, 0.12) } else { with_alpha(Color::BLACK, 0.09) };
+    let hover = if is_dark(theme) {
+        with_alpha(Color::WHITE, 0.07)
+    } else {
+        with_alpha(Color::BLACK, 0.05)
+    };
+    let pressed = if is_dark(theme) {
+        with_alpha(Color::WHITE, 0.12)
+    } else {
+        with_alpha(Color::BLACK, 0.09)
+    };
     let background = match status {
         button::Status::Hovered => Some(Background::Color(hover)),
         button::Status::Pressed => Some(Background::Color(pressed)),
@@ -184,7 +291,11 @@ pub fn tool_button(theme: &Theme, status: button::Status) -> button::Style {
     };
     button::Style {
         background,
-        text_color: if status == button::Status::Disabled { with_alpha(text, 0.35) } else { text },
+        text_color: if status == button::Status::Disabled {
+            with_alpha(text, 0.35)
+        } else {
+            text
+        },
         border: border::rounded(8),
         ..Default::default()
     }
@@ -208,7 +319,11 @@ pub fn primary_button(theme: &Theme, status: button::Status) -> button::Style {
 }
 
 pub fn secondary_button(theme: &Theme, status: button::Status) -> button::Style {
-    let base = if is_dark(theme) { rgb(0x30, 0x35, 0x3e) } else { rgb(0xec, 0xee, 0xf1) };
+    let base = if is_dark(theme) {
+        rgb(0x30, 0x35, 0x3e)
+    } else {
+        rgb(0xec, 0xee, 0xf1)
+    };
     let bg = match status {
         button::Status::Hovered => mix(base, theme.palette().text, 0.06),
         button::Status::Pressed => mix(base, theme.palette().text, 0.12),
@@ -216,8 +331,15 @@ pub fn secondary_button(theme: &Theme, status: button::Status) -> button::Style 
     };
     button::Style {
         background: Some(Background::Color(bg)),
-        text_color: if status == button::Status::Disabled { with_alpha(theme.palette().text, 0.4) } else { theme.palette().text },
-        border: Border { radius: 8.0.into(), ..Default::default() },
+        text_color: if status == button::Status::Disabled {
+            with_alpha(theme.palette().text, 0.4)
+        } else {
+            theme.palette().text
+        },
+        border: Border {
+            radius: 8.0.into(),
+            ..Default::default()
+        },
         ..Default::default()
     }
 }
@@ -251,7 +373,11 @@ pub fn input(theme: &Theme, status: text_input::Status) -> text_input::Style {
     if !matches!(status, text_input::Status::Focused { .. }) {
         s.border.color = border_color(theme);
     }
-    s.background = Background::Color(if is_dark(theme) { rgb(0x1b, 0x1e, 0x24) } else { Color::WHITE });
+    s.background = Background::Color(if is_dark(theme) {
+        rgb(0x1b, 0x1e, 0x24)
+    } else {
+        Color::WHITE
+    });
     s
 }
 
@@ -272,17 +398,33 @@ pub fn scroll(theme: &Theme, status: scrollable::Status) -> scrollable::Style {
     s
 }
 
-pub fn pick(theme: &Theme, status: iced::widget::pick_list::Status) -> iced::widget::pick_list::Style {
+pub fn pick(
+    theme: &Theme,
+    status: iced::widget::pick_list::Status,
+) -> iced::widget::pick_list::Style {
     use iced::widget::pick_list::Status;
     let focused = matches!(status, Status::Opened { .. });
-    let hovered = matches!(status, Status::Hovered | Status::Opened { is_hovered: true });
+    let hovered = matches!(
+        status,
+        Status::Hovered | Status::Opened { is_hovered: true }
+    );
     iced::widget::pick_list::Style {
         text_color: theme.palette().text,
         placeholder_color: muted_text(theme),
         handle_color: muted_text(theme),
-        background: Background::Color(if is_dark(theme) { rgb(0x1b, 0x1e, 0x24) } else { Color::WHITE }),
+        background: Background::Color(if is_dark(theme) {
+            rgb(0x1b, 0x1e, 0x24)
+        } else {
+            Color::WHITE
+        }),
         border: Border {
-            color: if focused { theme.palette().primary } else if hovered { mix(border_color(theme), theme.palette().primary, 0.5) } else { border_color(theme) },
+            color: if focused {
+                theme.palette().primary
+            } else if hovered {
+                mix(border_color(theme), theme.palette().primary, 0.5)
+            } else {
+                border_color(theme)
+            },
             width: 1.0,
             radius: 8.0.into(),
         },
@@ -292,14 +434,27 @@ pub fn pick(theme: &Theme, status: iced::widget::pick_list::Status) -> iced::wid
 pub fn pick_menu(theme: &Theme) -> iced::overlay::menu::Style {
     iced::overlay::menu::Style {
         background: Background::Color(surface(theme)),
-        border: Border { color: border_color(theme), width: 1.0, radius: 8.0.into() },
+        border: Border {
+            color: border_color(theme),
+            width: 1.0,
+            radius: 8.0.into(),
+        },
         text_color: theme.palette().text,
         selected_text_color: Color::WHITE,
         selected_background: Background::Color(theme.palette().primary),
-        shadow: Shadow { color: with_alpha(Color::BLACK, 0.25), offset: Vector::new(0.0, 4.0), blur_radius: 14.0 },
+        shadow: Shadow {
+            color: with_alpha(Color::BLACK, 0.25),
+            offset: Vector::new(0.0, 4.0),
+            blur_radius: 14.0,
+        },
     }
 }
 
 pub fn rule(theme: &Theme) -> iced::widget::rule::Style {
-    iced::widget::rule::Style { color: border_color(theme), radius: 0.0.into(), fill_mode: iced::widget::rule::FillMode::Full, snap: true }
+    iced::widget::rule::Style {
+        color: border_color(theme),
+        radius: 0.0.into(),
+        fill_mode: iced::widget::rule::FillMode::Full,
+        snap: true,
+    }
 }

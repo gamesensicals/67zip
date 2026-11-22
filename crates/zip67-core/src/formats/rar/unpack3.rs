@@ -17,16 +17,24 @@ const RC: usize = 28;
 const TABLE: usize = NC + DC + LDC + RC;
 const VM_MEMSIZE: u32 = 0x40000;
 
-const LDECODE: [u8; 28] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 10, 12, 14, 16, 20, 24, 28, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224];
-const LBITS: [u8; 28] = [0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5];
+const LDECODE: [u8; 28] = [
+    0, 1, 2, 3, 4, 5, 6, 7, 8, 10, 12, 14, 16, 20, 24, 28, 32, 40, 48, 56, 64, 80, 96, 112, 128,
+    160, 192, 224,
+];
+const LBITS: [u8; 28] = [
+    0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5,
+];
 const DDECODE: [u32; 60] = [
-    0, 1, 2, 3, 4, 6, 8, 12, 16, 24, 32, 48, 64, 96, 128, 192, 256, 384, 512, 768, 1024, 1536, 2048, 3072, 4096, 6144, 8192, 12288, 16384, 24576, 32768, 49152,
-    65536, 98304, 131072, 196608, 262144, 327680, 393216, 458752, 524288, 589824, 655360, 720896, 786432, 851968, 917504, 983040, 1048576, 1310720, 1572864,
-    1835008, 2097152, 2359296, 2621440, 2883584, 3145728, 3407872, 3670016, 3932160,
+    0, 1, 2, 3, 4, 6, 8, 12, 16, 24, 32, 48, 64, 96, 128, 192, 256, 384, 512, 768, 1024, 1536,
+    2048, 3072, 4096, 6144, 8192, 12288, 16384, 24576, 32768, 49152, 65536, 98304, 131072, 196608,
+    262144, 327680, 393216, 458752, 524288, 589824, 655360, 720896, 786432, 851968, 917504, 983040,
+    1048576, 1310720, 1572864, 1835008, 2097152, 2359296, 2621440, 2883584, 3145728, 3407872,
+    3670016, 3932160,
 ];
 const DBITS: [u8; 60] = [
-    0, 0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12, 12, 13, 13, 14, 14, 15, 15, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16,
-    16, 16, 16, 16, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18,
+    0, 0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12, 12, 13,
+    13, 14, 14, 15, 15, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 18, 18, 18, 18, 18,
+    18, 18, 18, 18, 18, 18, 18,
 ];
 const SDDECODE: [u8; 8] = [0, 4, 8, 16, 32, 64, 128, 192];
 const SDBITS: [u8; 8] = [2, 2, 3, 4, 5, 6, 6, 6];
@@ -105,12 +113,17 @@ fn vm_number(inp: &mut Input) -> u32 {
 }
 
 fn identify_program(code: &[u8]) -> VmKind {
-    let Some((&first, rest)) = code.split_first() else { return VmKind::None };
+    let Some((&first, rest)) = code.split_first() else {
+        return VmKind::None;
+    };
     if rest.iter().fold(0u8, |a, &b| a ^ b) != first {
         return VmKind::None;
     }
     let crc = crate::crc::crc32(code);
-    STANDARD_FILTERS.iter().find(|(len, c, _)| *len == code.len() && *c == crc).map_or(VmKind::None, |f| f.2)
+    STANDARD_FILTERS
+        .iter()
+        .find(|(len, c, _)| *len == code.len() && *c == crc)
+        .map_or(VmKind::None, |f| f.2)
 }
 
 impl Unpack3 {
@@ -209,10 +222,12 @@ impl Unpack3 {
             if u64::from(mem) > self.max_ppm_memory {
                 return Err(Error::limit("PPMd model needs more memory than allowed"));
             }
-            let model = PPMd7::new_decoder_7a(inp, order, mem).map_err(|_| bad("cannot start PPMd model"))?;
+            let model = PPMd7::new_decoder_7a(inp, order, mem)
+                .map_err(|_| bad("cannot start PPMd model"))?;
             self.ppm = Some(Box::new(model));
         } else if let Some(m) = self.ppm.as_mut() {
-            m.restart_range_decoder(inp).map_err(|_| bad("bad PPMd block"))?;
+            m.restart_range_decoder(inp)
+                .map_err(|_| bad("bad PPMd block"))?;
         }
         Ok(())
     }
@@ -286,12 +301,18 @@ impl Unpack3 {
         }
         let kind = self.programs[pos];
         if kind == VmKind::None {
-            return Err(Error::unsupported("a RAR filter program that is not one of the standard ones"));
+            return Err(Error::unsupported(
+                "a RAR filter program that is not one of the standard ones",
+            ));
         }
         if len > VM_MEMSIZE {
             return Err(bad("filter block too large"));
         }
-        win.add_filter(Filter { start: win.pos + u64::from(start), len, op: FilterOp::Vm { kind, r: regs } })
+        win.add_filter(Filter {
+            start: win.pos + u64::from(start),
+            len,
+            op: FilterOp::Vm { kind, r: regs },
+        })
     }
 
     fn read_vm_code(&mut self, inp: &mut Input, win: &mut Window) -> Result<()> {
@@ -479,7 +500,8 @@ impl Unpack3 {
                     if ln >= LDECODE.len() {
                         return Err(bad("bad length code"));
                     }
-                    let len = usize::from(LDECODE[ln]) + 2 + inp.bits(u32::from(LBITS[ln])) as usize;
+                    let len =
+                        usize::from(LDECODE[ln]) + 2 + inp.bits(u32::from(LBITS[ln])) as usize;
                     self.last_len = len;
                     win.copy(dist, len);
                 }
@@ -488,7 +510,8 @@ impl Unpack3 {
                     if n >= SDDECODE.len() {
                         return Err(bad("bad short distance code"));
                     }
-                    let dist = u64::from(SDDECODE[n]) + 1 + u64::from(inp.bits(u32::from(SDBITS[n])));
+                    let dist =
+                        u64::from(SDDECODE[n]) + 1 + u64::from(inp.bits(u32::from(SDBITS[n])));
                     self.insert_dist(dist);
                     self.last_len = 2;
                     win.copy(dist, 2);

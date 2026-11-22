@@ -31,16 +31,25 @@ pub struct Keys5 {
 
 pub fn derive5(password: &Password, salt: &[u8; 16], lg2: u8) -> Keys5 {
     let pw = truncated(password);
-    let base = HmacSha256::new_from_slice(pw.as_bytes()).unwrap_or_else(|_| HmacSha256::new_from_slice(&[]).expect("empty HMAC key"));
+    let base = HmacSha256::new_from_slice(pw.as_bytes())
+        .unwrap_or_else(|_| HmacSha256::new_from_slice(&[]).expect("empty HMAC key"));
     let mut m = base.clone();
     m.update(salt);
     m.update(&[0, 0, 0, 1]);
     let mut u: [u8; 32] = m.finalize().into_bytes().into();
     let mut f = Zeroizing::new(u);
-    let mut out = [Zeroizing::new([0u8; 32]), Zeroizing::new([0u8; 32]), Zeroizing::new([0u8; 32])];
+    let mut out = [
+        Zeroizing::new([0u8; 32]),
+        Zeroizing::new([0u8; 32]),
+        Zeroizing::new([0u8; 32]),
+    ];
     // Fuzzing builds use few rounds so the fuzzer gets past the key
     // derivation; the code path is the same.
-    let lg2 = if cfg!(fuzzing) { lg2.min(4) } else { lg2.min(MAX_KDF_LG2) };
+    let lg2 = if cfg!(fuzzing) {
+        lg2.min(4)
+    } else {
+        lg2.min(MAX_KDF_LG2)
+    };
     let counts = [(1u32 << lg2) - 1, 16, 16];
     for (k, &n) in counts.iter().enumerate() {
         for _ in 0..n {
@@ -58,7 +67,11 @@ pub fn derive5(password: &Password, salt: &[u8; 16], lg2: u8) -> Keys5 {
         check[i % 8] ^= b;
     }
     let [key, hash_key, _] = out;
-    Keys5 { key, hash_key, check }
+    Keys5 {
+        key,
+        hash_key,
+        check,
+    }
 }
 
 /// The stored password check is 8 bytes and the first 4 bytes of their
@@ -70,7 +83,9 @@ pub fn check_value_valid(check: &[u8; 12]) -> bool {
 
 /// CRC-32 as stored for files encrypted with checksum MACs.
 pub fn crc_mac(crc: u32, hash_key: &[u8; 32]) -> u32 {
-    let Ok(mut m) = HmacSha256::new_from_slice(hash_key) else { return crc };
+    let Ok(mut m) = HmacSha256::new_from_slice(hash_key) else {
+        return crc;
+    };
     m.update(&crc.to_le_bytes());
     let d = m.finalize().into_bytes();
     let mut v = 0u32;
@@ -82,7 +97,9 @@ pub fn crc_mac(crc: u32, hash_key: &[u8; 32]) -> u32 {
 
 /// BLAKE2sp digest as stored for files encrypted with checksum MACs.
 pub fn blake2_mac(digest: &[u8; 32], hash_key: &[u8; 32]) -> [u8; 32] {
-    let Ok(mut m) = HmacSha256::new_from_slice(hash_key) else { return *digest };
+    let Ok(mut m) = HmacSha256::new_from_slice(hash_key) else {
+        return *digest;
+    };
     m.update(digest);
     m.finalize().into_bytes().into()
 }
@@ -100,19 +117,35 @@ struct Sha1Rar {
 
 impl Sha1Rar {
     fn new() -> Self {
-        Sha1Rar { h: [0x6745_2301, 0xEFCD_AB89, 0x98BA_DCFE, 0x1032_5476, 0xC3D2_E1F0], count: 0, buf: [0; 64] }
+        Sha1Rar {
+            h: [
+                0x6745_2301,
+                0xEFCD_AB89,
+                0x98BA_DCFE,
+                0x1032_5476,
+                0xC3D2_E1F0,
+            ],
+            count: 0,
+            buf: [0; 64],
+        }
     }
 
     /// Returns the last 16 expanded message words.
     fn transform(h: &mut [u32; 5], block: &[u8]) -> [u32; 16] {
         let mut w = [0u32; 16];
         for (i, x) in w.iter_mut().enumerate() {
-            *x = u32::from_be_bytes([block[i * 4], block[i * 4 + 1], block[i * 4 + 2], block[i * 4 + 3]]);
+            *x = u32::from_be_bytes([
+                block[i * 4],
+                block[i * 4 + 1],
+                block[i * 4 + 2],
+                block[i * 4 + 3],
+            ]);
         }
         let [mut a, mut b, mut c, mut d, mut e] = *h;
         for t in 0..80 {
             if t >= 16 {
-                w[t & 15] = (w[(t + 13) & 15] ^ w[(t + 8) & 15] ^ w[(t + 2) & 15] ^ w[t & 15]).rotate_left(1);
+                w[t & 15] = (w[(t + 13) & 15] ^ w[(t + 8) & 15] ^ w[(t + 2) & 15] ^ w[t & 15])
+                    .rotate_left(1);
             }
             let (f, k) = match t {
                 0..=19 => ((b & c) | (!b & d), 0x5A82_7999),
@@ -120,7 +153,12 @@ impl Sha1Rar {
                 40..=59 => ((b & c) | (b & d) | (c & d), 0x8F1B_BCDC),
                 _ => (b ^ c ^ d, 0xCA62_C1D6u32),
             };
-            let tmp = a.rotate_left(5).wrapping_add(f).wrapping_add(e).wrapping_add(k).wrapping_add(w[t & 15]);
+            let tmp = a
+                .rotate_left(5)
+                .wrapping_add(f)
+                .wrapping_add(e)
+                .wrapping_add(k)
+                .wrapping_add(w[t & 15]);
             e = d;
             d = c;
             c = b.rotate_left(30);
@@ -163,7 +201,10 @@ impl Sha1Rar {
         let bits = self.count.wrapping_mul(8);
         let mut pad = vec![0x80u8];
         let rem = ((self.count + 1) % 64) as usize;
-        pad.extend(std::iter::repeat_n(0u8, if rem <= 56 { 56 - rem } else { 120 - rem }));
+        pad.extend(std::iter::repeat_n(
+            0u8,
+            if rem <= 56 { 56 - rem } else { 120 - rem },
+        ));
         pad.extend_from_slice(&bits.to_be_bytes());
         s.update_impl(&mut pad, false);
         let mut out = [0u8; 20];

@@ -43,7 +43,9 @@ pub fn read_header<R: BufRead>(r: &mut R) -> Result<GzipHeader> {
         return Err(Error::corrupt("not a gzip stream"));
     }
     if h[2] != 8 {
-        return Err(Error::unsupported("gzip compression method other than deflate"));
+        return Err(Error::unsupported(
+            "gzip compression method other than deflate",
+        ));
     }
     let flags = h[3];
     let _ = FTEXT;
@@ -94,7 +96,8 @@ impl<R: BufRead> GzipReader<R> {
     fn finish_member(&mut self) -> Result<bool> {
         let r = self.inflate.get_mut();
         let mut t = [0u8; 8];
-        r.read_exact(&mut t).map_err(|_| Error::corrupt("gzip trailer missing"))?;
+        r.read_exact(&mut t)
+            .map_err(|_| Error::corrupt("gzip trailer missing"))?;
         let crc = u32::from_le_bytes([t[0], t[1], t[2], t[3]]);
         let isize = u32::from_le_bytes([t[4], t[5], t[6], t[7]]);
         let got = std::mem::replace(&mut self.crc, crc32fast::Hasher::new()).finalize();
@@ -156,7 +159,13 @@ pub struct GzipWriter<W: Write> {
 impl<W: Write> GzipWriter<W> {
     pub fn new(mut inner: W, level: u32, name: Option<&str>, mtime: u32) -> Result<Self> {
         let flags = if name.is_some() { FNAME } else { 0 };
-        let xfl = if level >= 9 { 2 } else if level <= 1 { 4 } else { 0 };
+        let xfl = if level >= 9 {
+            2
+        } else if level <= 1 {
+            4
+        } else {
+            0
+        };
         let m = mtime.to_le_bytes();
         inner.write_all(&[0x1f, 0x8b, 8, flags, m[0], m[1], m[2], m[3], xfl, 3])?;
         if let Some(n) = name {

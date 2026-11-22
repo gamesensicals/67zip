@@ -42,7 +42,11 @@ impl<'a> Rd<'a> {
     }
     pub fn take(&mut self, n: u64) -> Result<&'a [u8]> {
         let n = usize::try_from(n).map_err(|_| bad("length"))?;
-        let end = self.p.checked_add(n).filter(|&e| e <= self.b.len()).ok_or_else(|| bad("field runs past the header"))?;
+        let end = self
+            .p
+            .checked_add(n)
+            .filter(|&e| e <= self.b.len())
+            .ok_or_else(|| bad("field runs past the header"))?;
         let s = &self.b[self.p..end];
         self.p = end;
         Ok(s)
@@ -117,9 +121,13 @@ pub(crate) fn read_volume(
         let extra_size = if hflags & 1 != 0 { r.vint()? } else { 0 };
         let data_size = if hflags & 2 != 0 { r.vint()? } else { 0 };
         let data_pos = pos + consumed;
-        let next = data_pos.checked_add(data_size).ok_or_else(|| bad("data size"))?;
-        let body_end =
-            raw.len().checked_sub(usize::try_from(extra_size).map_err(|_| bad("extra size"))?).ok_or_else(|| bad("extra area larger than header"))?;
+        let next = data_pos
+            .checked_add(data_size)
+            .ok_or_else(|| bad("data size"))?;
+        let body_end = raw
+            .len()
+            .checked_sub(usize::try_from(extra_size).map_err(|_| bad("extra size"))?)
+            .ok_or_else(|| bad("extra area larger than header"))?;
         if body_end < r.p {
             return Err(bad("extra area overlaps the header fields"));
         }
@@ -140,7 +148,8 @@ pub(crate) fn read_volume(
                 let mut rec = match parse_file(body, extra) {
                     Ok(r) => r,
                     Err(e) => {
-                        vh.warnings.push(format!("{e}; the files after it were not read"));
+                        vh.warnings
+                            .push(format!("{e}; the files after it were not read"));
                         vh.truncated = true;
                         break;
                     }
@@ -170,7 +179,9 @@ pub(crate) fn read_volume(
                 let salt: [u8; 16] = b.arr()?;
                 let check: Option<[u8; 12]> = if flags & 1 != 0 { Some(b.arr()?) } else { None };
                 vh.encrypted_headers = true;
-                let Some(pw) = password else { return Err(Error::PasswordRequired) };
+                let Some(pw) = password else {
+                    return Err(Error::PasswordRequired);
+                };
                 if lg2 > crypto::MAX_KDF_LG2 {
                     return Err(Error::unsupported("RAR5 key derivation count too high"));
                 }
@@ -245,7 +256,9 @@ fn read_encrypted(src: &mut dyn ReadSeek, left: u64, key: &AesKey) -> Result<(Ve
     src.read_exact(&mut first)?;
     let mut dec = cbc_decrypt(key, &iv, &first);
     let mut r = Rd::new(&dec[4..]);
-    let hsize = r.vint().map_err(|_| Error::Checksum("RAR5 header".into()))?;
+    let hsize = r
+        .vint()
+        .map_err(|_| Error::Checksum("RAR5 header".into()))?;
     let vlen = r.p as u64;
     if hsize == 0 || hsize > MAX_HEADER {
         return Err(Error::Checksum("RAR5 header".into()));
@@ -289,8 +302,16 @@ fn parse_file(body: &[u8], extra: &[u8]) -> Result<FileRec> {
     let fflags = b.vint()?;
     let unp_size = b.vint()?;
     let attr = b.vint()?;
-    let mtime = if fflags & 2 != 0 { Some(b.u32()?) } else { None };
-    let crc = if fflags & 4 != 0 { Some(b.u32()?) } else { None };
+    let mtime = if fflags & 2 != 0 {
+        Some(b.u32()?)
+    } else {
+        None
+    };
+    let crc = if fflags & 4 != 0 {
+        Some(b.u32()?)
+    } else {
+        None
+    };
     let ci = b.vint()?;
     let host = b.vint()?;
     let nlen = b.vint()?;
@@ -306,7 +327,11 @@ fn parse_file(body: &[u8], extra: &[u8]) -> Result<FileRec> {
     }
     let alg = (ci & 0x3f) as u8;
     let method = ((ci >> 7) & 7) as u8;
-    let dict = if alg == 0 { (128u64 << 10) << ((ci >> 10) & 0xf) } else { (128u64 << 10) << ((ci >> 10) & 0x1f) };
+    let dict = if alg == 0 {
+        (128u64 << 10) << ((ci >> 10) & 0xf)
+    } else {
+        (128u64 << 10) << ((ci >> 10) & 0x1f)
+    };
     let mut rec = FileRec {
         name,
         dir: fflags & 1 != 0,
@@ -360,7 +385,13 @@ fn extra_record(rec: &mut FileRec, kind: u64, f: &mut Rd) -> Result<()> {
                     a.copy_from_slice(&c[..8]);
                     a
                 });
-                rec.crypt = Some(Crypt::V5 { lg2, salt, iv, check, mac: flags & 2 != 0 });
+                rec.crypt = Some(Crypt::V5 {
+                    lg2,
+                    salt,
+                    iv,
+                    check,
+                    mac: flags & 2 != 0,
+                });
             }
             2 => {
                 if f.vint()? == 0 {
@@ -370,7 +401,13 @@ fn extra_record(rec: &mut FileRec, kind: u64, f: &mut Rd) -> Result<()> {
             3 => {
                 let flags = f.vint()?;
                 let unix = flags & 1 != 0;
-                let read = |f: &mut Rd| -> Result<u64> { if unix { f.u32().map(u64::from) } else { f.u64() } };
+                let read = |f: &mut Rd| -> Result<u64> {
+                    if unix {
+                        f.u32().map(u64::from)
+                    } else {
+                        f.u64()
+                    }
+                };
                 let m = if flags & 2 != 0 { Some(read(f)?) } else { None };
                 if flags & 4 != 0 {
                     read(f)?;
@@ -378,9 +415,17 @@ fn extra_record(rec: &mut FileRec, kind: u64, f: &mut Rd) -> Result<()> {
                 if flags & 8 != 0 {
                     read(f)?;
                 }
-                let ns = if unix && flags & 0x10 != 0 && flags & 2 != 0 { f.u32().ok() } else { None };
+                let ns = if unix && flags & 0x10 != 0 && flags & 2 != 0 {
+                    f.u32().ok()
+                } else {
+                    None
+                };
                 if let Some(m) = m {
-                    rec.mtime = Some(if unix { (m as i64, ns.unwrap_or(0).min(999_999_999)) } else { crate::util::filetime_to_unix(m) });
+                    rec.mtime = Some(if unix {
+                        (m as i64, ns.unwrap_or(0).min(999_999_999))
+                    } else {
+                        crate::util::filetime_to_unix(m)
+                    });
                 }
             }
             4 => {
