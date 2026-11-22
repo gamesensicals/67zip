@@ -97,10 +97,22 @@ multi-core safe bzip2 decoder.
   The bzip2 crate is now only used for compressing (trusted input).
   zip and streams fuzzers: ~1.4M runs each, no crash.
 
+- **ISO 9660 reader done** (Rock Ridge, Joliet, multi-extent, cycle-safe),
+  tested against genisoimage images.
+- **Second fuzz finding fixed**: endless loop in lzma-rust2 0.25's
+  `Lzma2Reader` on LZMA chunks sent before properties. LZMA2 input now goes
+  through our `codecs/lzma2.rs` guard (chunk structure validation) and the
+  single-thread path uses `Lzma2Stream` with a no-progress check.
+- Clean fuzz round after fixes (10 min each): 7z 278k, tar 4.6M, streams
+  102k, open_any 62k runs; earlier zip 1.4M. Seeds in `fuzz/seeds/`.
+- GUI: dialogs focus their text field; password retry flow verified;
+  settings/about verified. `install.sh` verified (install + uninstall).
+
 ## Next
 
-ISO 9660 reader (`formats/iso.rs` is a stub), longer fuzzing, GUI polish,
-then ask the user to approve moving the work to `gamesensicals/67zip`.
+Ask the user to approve moving the work to `gamesensicals/67zip`.
+Possible polish: nested archive write-back (now read-only), AppImage script,
+drag files *out* of the window (iced does not support it yet).
 
 ## How to resume
 

@@ -299,3 +299,7 @@ pub fn pick_menu(theme: &Theme) -> iced::overlay::menu::Style {
         shadow: Shadow { color: with_alpha(Color::BLACK, 0.25), offset: Vector::new(0.0, 4.0), blur_radius: 14.0 },
     }
 }
+
+pub fn rule(theme: &Theme) -> iced::widget::rule::Style {
+    iced::widget::rule::Style { color: border_color(theme), radius: 0.0.into(), fill_mode: iced::widget::rule::FillMode::Full, snap: true }
+}

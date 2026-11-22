@@ -86,7 +86,7 @@ impl App {
             let mut col = Column::new().spacing(1).width(250);
             for (name, msg, enabled) in &m.items {
                 if name.is_empty() {
-                    col = col.push(container(rule::horizontal(1)).padding(Padding::from([3, 6])));
+                    col = col.push(container(rule::horizontal(1).style(style::rule)).padding(Padding::from([3, 6])));
                 } else {
                     col = col.push(
                         button(text(name.clone()).size(13))
@@ -126,13 +126,13 @@ impl App {
             tool(Icon::Add, "Add", "Add the selected items to an archive", some(Message::Add, true)),
             tool(Icon::Extract, "Extract", "Extract files", some(Message::Extract, has_sel || in_archive)),
             tool(Icon::Test, "Test", "Check the archive for errors", some(Message::Test, has_sel || in_archive)),
-            rule::vertical(1),
+            rule::vertical(1).style(style::rule),
             tool(Icon::Copy, "Copy", "Copy to another folder (F5)", some(Message::CopyTo, has_sel || in_archive)),
             tool(Icon::Move, "Move", "Move to another folder (F6)", some(Message::MoveTo, has_sel && !in_archive)),
             tool(Icon::Delete, "Delete", "Delete (Del)", some(Message::Delete, has_sel)),
             tool(Icon::Info, "Info", "Properties (Alt+Enter)", Some(Message::Info)),
             tool(Icon::NewFolder, "Folder", "New folder (F7)", some(Message::NewFolder, true)),
-            rule::vertical(1),
+            rule::vertical(1).style(style::rule),
             tool(Icon::Hash, "Checksum", "CRC32, SHA-256 and BLAKE3 of the selected files", some(Message::Hash(None), has_sel && !in_archive)),
             tool(Icon::Bench, "Benchmark", "Measure compression speed", some(Message::Benchmark, true)),
             space().width(Length::Fill),
@@ -513,7 +513,7 @@ impl App {
                 let mut c = column![Self::title_row(Icon::Info, title.clone())].spacing(8);
                 for (k, v) in lines {
                     if k.is_empty() {
-                        c = c.push(rule::horizontal(1));
+                        c = c.push(rule::horizontal(1).style(style::rule));
                     } else {
                         c = c.push(row![container(muted(k.clone())).width(130), text(v.clone()).size(13).width(Length::Fill)].spacing(10));
                     }
@@ -623,7 +623,7 @@ impl App {
             c = c.push(field("", checkbox(f.solid).label("Solid archive (smaller, slower to extract single files)").on_toggle(Message::AddSolid).text_size(13)));
         }
         if !into && f.encryptable() {
-            c = c.push(rule::horizontal(1));
+            c = c.push(rule::horizontal(1).style(style::rule));
             c = c.push(field(
                 "Password",
                 row![
@@ -649,7 +649,7 @@ impl App {
             }
         }
         if !into {
-            c = c.push(rule::horizontal(1));
+            c = c.push(rule::horizontal(1).style(style::rule));
             c = c.push(field("Split into", pick_list(VOLUMES, Some(f.volume), Message::AddVolume).text_size(14).padding(Padding::from([7, 10])).style(style::pick).menu_style(style::pick_menu).width(Length::Fill)));
             c = c.push(field("Leave out", input("e.g. *.tmp, .git, node_modules", &f.exclude, Message::AddExclude)));
             c = c.push(field("", checkbox(f.delete_after).label("Delete the files after they were added").on_toggle(Message::AddDeleteAfter).text_size(13)));
@@ -750,11 +750,11 @@ impl App {
             field("Appearance", row![theme_btn("System", ThemeChoice::System), theme_btn("Light", ThemeChoice::Light), theme_btn("Dark", ThemeChoice::Dark)].spacing(6)),
             field("Accent colour", swatches),
             field("Size", pick_list(scales, Some(cur_scale), Message::SetScale).text_size(14).padding(Padding::from([7, 10])).style(style::pick).menu_style(style::pick_menu)),
-            rule::horizontal(1),
+            rule::horizontal(1).style(style::rule),
             field("", checkbox(s.show_hidden).label("Show hidden files (Ctrl+H)").on_toggle(Message::SetShowHidden).text_size(13)),
             field("", checkbox(s.use_trash).label("Delete moves files to the Trash").on_toggle(Message::SetUseTrash).text_size(13)),
             field("", checkbox(s.confirm_delete).label("Ask before deleting").on_toggle(Message::SetConfirmDelete).text_size(13)),
-            rule::horizontal(1),
+            rule::horizontal(1).style(style::rule),
             field("New archives", pick_list(FORMATS, FORMATS.iter().copied().find(|f| f.0 == s.default_format), Message::SetDefaultFormat).text_size(14).padding(Padding::from([7, 10])).style(style::pick).menu_style(style::pick_menu).width(Length::Fill)),
             field("Compression", pick_list(LEVELS, LEVELS.iter().copied().find(|l| l.0 == s.default_level), Message::SetDefaultLevel).text_size(14).padding(Padding::from([7, 10])).style(style::pick).menu_style(style::pick_menu).width(Length::Fill)),
             row![space().width(Length::Fill), primary("Done", Some(Message::CloseModal))],
