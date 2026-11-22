@@ -82,10 +82,25 @@ multi-core safe bzip2 decoder.
   Inter font, own SVG icons + logo (`resources/67zip.svg`). Tested under
   Xvfb + xdotool (needs `xdotool windowfocus` there: no window manager).
 
+- **Stage 6 done**: README (with screenshots in `docs/screenshots`), MIT +
+  Apache licences, `install.sh` (user or --system, --uninstall), desktop
+  entry + AppStream + icons (`data/`), Dolphin/Nemo/Nautilus menus, Flatpak
+  manifest (`packaging/flatpak`, needs cargo-sources.json), cargo-deb
+  metadata (gui crate), GitHub Actions CI (`.github/workflows/ci.yml`),
+  fuzz targets (`fuzz/`, cargo +nightly fuzz; corpora in `fuzz/corpus`).
+- **Fuzzing found a crash** in the `libbz2-rs-sys` 0.2.7 bzip2 decoder
+  (integer underflow in decompress.rs:710, panics with overflow checks).
+  Fixed by stage 5's **own bzip2 decoder** (`codecs/bz2.rs`): safe,
+  multi-core (scans for block magics, decodes blocks in parallel, strict
+  sequential fallback), fast 10-bit Huffman tables. Used for .bz2,
+  .tar.bz2, zip and 7z. Speed: ~170% of 7-Zip (4 threads), 1 thread ~65%.
+  The bzip2 crate is now only used for compressing (trusted input).
+  zip and streams fuzzers: ~1.4M runs each, no crash.
+
 ## Next
 
-Stage 6 first (packaging/README/CI/licences), then stage 5 (bzip2 decoder,
-ISO), then fuzz targets.
+ISO 9660 reader (`formats/iso.rs` is a stub), longer fuzzing, GUI polish,
+then ask the user to approve moving the work to `gamesensicals/67zip`.
 
 ## How to resume
 

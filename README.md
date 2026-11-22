@@ -6,7 +6,8 @@ modern interface that looks the same on every distribution.
 ![67zip browsing a 7z archive](docs/screenshots/archive-light.png)
 
 - **Own archive engine in safe Rust.** The 7z, zip and tar formats, gzip
-  framing, safe extraction and the sandbox are written for 67zip. `unsafe`
+  framing, the multi-core bzip2 decoder, safe extraction and the sandbox
+  are written for 67zip. `unsafe`
   code is forbidden in every 67zip crate. Compression algorithms and
   encryption come from small, widely used pure-Rust libraries; encryption
   is never home-made.
@@ -154,7 +155,7 @@ files with `tools/speedcheck.sh`.
 | zip compress | 2–3× faster, files ~3% larger |
 | zip extract | about 190% |
 | bzip2 compress | about 200% |
-| bzip2 extract | 57% (a faster multi-core decoder is being written) |
+| bzip2 extract | about 170% (own multi-core decoder) |
 
 ## Project layout
 

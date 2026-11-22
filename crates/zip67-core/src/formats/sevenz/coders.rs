@@ -302,7 +302,7 @@ fn coder_reader(id: &[u8], props: &[u8], inputs: Vec<BoxR>, size: u64, ctx: &Dec
             check_mem(lim, u64::from(mem), "PPMd model")?;
             Box::new(ppmd_rust::Ppmd7Decoder::new(one(inputs)?, order, mem).map_err(|e| Error::corrupt(format!("ppmd: {e:?}")))?)
         }
-        ID_BZIP2 => Box::new(bzip2::read::MultiBzDecoder::new(one(inputs)?)),
+        ID_BZIP2 => Box::new(crate::codecs::bz2::BzDecoder::new(one(inputs)?, ctx.threads.max(1))),
         ID_DEFLATE => Box::new(crate::codecs::deflate::InflateReader::new(BufReader::new(one(inputs)?))),
         ID_ZSTD => Box::new(crate::codecs::zstd::ZstdReader::new(BufReader::new(one(inputs)?), lim.max_decoder_memory)),
         ID_DELTA => Box::new(lzma_rust2::filter::delta::DeltaReader::new(one(inputs)?, usize::from(props.first().copied().unwrap_or(0)) + 1)),

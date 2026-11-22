@@ -424,7 +424,7 @@ impl ZipReader {
         let decoded: Box<dyn Read + Send + 'a> = match method {
             M_STORE => decrypted,
             M_DEFLATE => Box::new(codecs::deflate::InflateReader::new(BufReader::with_capacity(64 * 1024, decrypted))),
-            M_BZIP2 => Box::new(bzip2::read::BzDecoder::new(decrypted)),
+            M_BZIP2 => Box::new(codecs::bz2::BzDecoder::new(decrypted, 1)),
             M_LZMA => {
                 let mut r = decrypted;
                 let mut hdr = [0u8; 9];

@@ -1,6 +1,7 @@
 //! Compression streams: one place that knows how to build a decoder or an
 //! encoder for every stream compression 67zip supports.
 
+pub mod bz2;
 pub mod deflate;
 pub mod gzip;
 pub mod parallel;
@@ -58,7 +59,7 @@ pub fn decoder<'a>(c: Compression, inner: BoxRead<'a>, limits: &Limits) -> Resul
     Ok(match c {
         Compression::None => Box::new(buffered),
         Compression::Gzip => Box::new(gzip::GzipReader::new(buffered)),
-        Compression::Bzip2 => Box::new(bzip2::read::MultiBzDecoder::new(buffered)),
+        Compression::Bzip2 => Box::new(bz2::BzDecoder::new(buffered, crate::util::default_threads())),
         Compression::Xz => Box::new(lzma_rust2::XzReader::new_mem_limit(buffered, true, mem_limit_kb(limits))),
         Compression::Zstd => Box::new(zstd::ZstdReader::new(buffered, limits.max_decoder_memory)),
         Compression::Lzma => Box::new(
