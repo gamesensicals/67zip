@@ -1,7 +1,6 @@
 # 67zip
 
-A fast, secure archive manager for Linux, in the spirit of 7-Zip, with a
-modern interface that looks the same on every distribution.
+A fast, secure archive manager for Linux, in the spirit of 7-Zip.
 
 ![67zip browsing a 7z archive](docs/screenshots/archive-light.png)
 
