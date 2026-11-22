@@ -6,6 +6,8 @@ use zip67_core::extract::Overwrite;
 
 #[derive(Debug, Default)]
 pub struct Args {
+    /// Things worth telling the user about the switches they gave (printed to stderr).
+    pub notes: Vec<String>,
     pub command: String,
     pub archive: Option<PathBuf>,
     pub files: Vec<String>,
@@ -74,7 +76,15 @@ fn method_switch(a: &mut Args, s: &str) -> Result<(), String> {
         }
         "s" => a.solid = Some(on_off(&v)?),
         "he" => a.encrypt_names = on_off(&v)?,
-        "hc" | "f" | "tc" | "ta" | "tm" | "qs" | "fb" | "pass" | "mf" | "em" | "cu" | "cl" => {} // accepted, defaults used
+        "em" => match v.to_ascii_lowercase().replace('-', "").as_str() {
+            "aes256" => {}
+            "aes128" | "aes192" => a.notes.push(format!("-mem={v}: zips are always encrypted with AES-256, the strongest option.")),
+            "zipcrypto" => a.notes.push(
+                "-mem=ZipCrypto: 67z doesn't create ZipCrypto zips because that old encryption is easy to break; using AES-256 (7-Zip and 67zip open it, Windows Explorer can't).".into(),
+            ),
+            other => return Err(format!("unknown encryption method '-mem={other}' (zips use AES256)")),
+        },
+        "hc" | "f" | "tc" | "ta" | "tm" | "qs" | "fb" | "pass" | "mf" | "cu" | "cl" => {} // accepted, defaults used
         other => return Err(format!("unknown -m switch '-m{other}'")),
     }
     Ok(())

@@ -2,9 +2,12 @@
 
 A fast, secure archive manager for Linux, in the spirit of 7-Zip.
 
-![67zip browsing a 7z archive](docs/screenshots/archive-light.png)
+<p align="center">
+  <img src="docs/screenshots/app-light.png" width="49%" alt="67zip browsing a 7z archive in light mode">
+  <img src="docs/screenshots/app-dark.png" width="49%" alt="67zip in dark mode">
+</p>
 
-- **Own archive engine in safe Rust.** The 7z, zip, tar and RAR formats,
+- **Own archive engine in safe Rust.** The 7z, zip, tar, RAR, ISO and UDF formats,
   gzip framing, the multi-core bzip2 decoder, the RAR decompressors, safe
   extraction and the sandbox are written for 67zip. `unsafe`
   code is forbidden in every 67zip crate. Compression algorithms and
@@ -28,7 +31,7 @@ A fast, secure archive manager for Linux, in the spirit of 7-Zip.
 | tar | yes | yes | ustar, PAX, GNU long names; plain or with gz, bz2, xz, zst, lz, lzma |
 | gz, bz2, xz, zst, lzma, lz | yes | yes | single files |
 | Split archives | yes | yes | open from any part: `.001`, `.part1.7z` / `.part01.rar`-style names, `.7z.part1`, PKZIP `.z01` … `.zip`, RAR `.rar` + `.r00` …, `split`'s `.aa`; create `.001` parts with "Split into" or `-v100m` |
-| iso | yes | no | ISO 9660 with Rock Ridge (permissions, links) and Joliet (Unicode names) |
+| iso, udf | yes | no | Disc images. UDF (ISO/IEC 13346, revisions 1.02–2.60: DVDs, Blu-rays incl. the 2.50 metadata partition, sparable DVD-RW, long Unicode names, files over 4 GB, links, permissions) and ISO 9660 with Rock Ridge (permissions, links) and Joliet (Unicode names). Images with both use UDF. Not supported: packet-written CD-R/DVD-R with a virtual allocation table |
 | rar | yes | no | RAR5 and RAR 2.0–4.x: solid, multi-volume (`.part1.rar` or `.rar` + `.r00`), self-extracting `.exe`/`.sfx`, AES-256 / AES-128 including encrypted file names, BLAKE2sp checksums, links, comments, file versions. Not supported: RAR 1.5 compression and RAR 2.0 encryption (1990s archives) |
 
 ## Install
@@ -46,7 +49,8 @@ sudo ./install.sh --system    # or for everyone into /usr/local, after building
 The script installs:
 - `67zip` (the app) and `67z` (the command line tool);
 - a menu entry, the icon, and "Open with" for archive files;
-- "Extract here" and "Add to archive" menus for Dolphin, Nemo and Nautilus.
+- "Extract here", "Add to archive" and "Compress to .zip with a password"
+  menus for Dolphin, Nemo and Nautilus.
 
 Remove everything with `./install.sh --uninstall`.
 
@@ -71,7 +75,9 @@ Wayland) and working OpenGL or Vulkan drivers, as any desktop provides.
 - **Toolbar:** Add, Extract, Test, Copy, Move, Delete, Info, New folder,
   Checksum, Benchmark.
 - **Right-click** for Extract here, Extract to "name/", Add to "name.7z",
-  and more.
+  Add to zip with a password, and more.
+- **Passwords:** tick "Protect with a password" in the Add dialog (7z and
+  zip, AES-256). With 7z you can also encrypt the file names.
 - **Drag files onto the window.** In a folder, this opens or compresses
   them; inside an archive, it adds them.
 - **Keys:**

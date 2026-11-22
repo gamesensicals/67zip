@@ -13,8 +13,8 @@ path = "src/main.rs"
 [dependencies]
 ctrlc = "3.5.3"
 rustix = { version = "1.1.6", features = ["termios", "stdio"] }
-zip67-core = { version = "0.1.0", path = "../zip67-core" }
-zip67-worker = { version = "0.1.0", path = "../zip67-worker" }
+zip67-core = { version = "0.1.1", path = "../zip67-core" }
+zip67-worker = { version = "0.1.1", path = "../zip67-worker" }
 
 [dev-dependencies]
 tempfile = "3.27.0"

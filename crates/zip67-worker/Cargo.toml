@@ -13,4 +13,4 @@ rustix = { version = "1.1.6", features = ["process", "fs"] }
 seccompiler = "0.5.0"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
-zip67-core = { version = "0.1.0", path = "../zip67-core" }
+zip67-core = { version = "0.1.1", path = "../zip67-core" }

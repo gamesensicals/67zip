@@ -146,7 +146,7 @@ pub fn open_reader(mut src: Box<dyn ReadSeek>, size: u64, name: &str, opts: &Ope
         Container::Tar => Ok(Box::new(crate::formats::tar::TarReader::open(src, size, t.compression, opts)?)),
         Container::Raw => Ok(Box::new(crate::formats::raw::RawReader::open(src, size, name, t.compression, opts)?)),
         Container::SevenZ => Ok(Box::new(crate::formats::sevenz::SevenZReader::open(src, size, opts)?)),
-        Container::Iso => Ok(Box::new(crate::formats::iso::IsoReader::open(src, size, opts)?)),
+        Container::Iso => crate::formats::udf::UdfReader::open_disc(src, size, opts),
         Container::Rar => Ok(Box::new(crate::formats::rar::RarReader::open(src, size, opts)?)),
     }
 }

@@ -172,6 +172,8 @@ pub struct IsoReader {
     extents: Vec<Vec<Extent>>,
     limits: Limits,
     kind: &'static str,
+    /// Damage noticed while opening (e.g. an unreadable UDF part).
+    pub(crate) problems: Vec<String>,
 }
 
 impl IsoReader {
@@ -296,7 +298,7 @@ impl IsoReader {
                 entries.push(e);
             }
         }
-        Ok(IsoReader { src, size, entries, extents, limits, kind })
+        Ok(IsoReader { src, size, entries, extents, limits, kind, problems: Vec::new() })
     }
 }
 
@@ -308,7 +310,7 @@ impl ArchiveReader for IsoReader {
         &self.entries
     }
     fn info(&self) -> ArchiveInfo {
-        ArchiveInfo { format: "iso".into(), physical_size: self.size, methods: vec![self.kind.into()], volumes: 1, ..Default::default() }
+        ArchiveInfo { format: "iso".into(), physical_size: self.size, methods: vec![self.kind.into()], volumes: 1, problems: self.problems.clone(), ..Default::default() }
     }
     fn extract(&mut self, selected: &dyn Fn(&Entry) -> bool, visitor: &mut dyn EntryVisitor, progress: &Progress) -> Result<()> {
         let _ = &self.limits;

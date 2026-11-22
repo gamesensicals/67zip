@@ -133,6 +133,8 @@ pub struct AddForm {
     pub format: Format,
     pub level: Level,
     pub method: MethodChoice,
+    /// "Protect with a password" is ticked: the password fields are shown.
+    pub protect: bool,
     pub password: String,
     pub password2: String,
     pub show_password: bool,

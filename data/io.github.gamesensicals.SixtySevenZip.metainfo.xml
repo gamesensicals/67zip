@@ -6,13 +6,14 @@
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>MIT</project_license>
   <description>
-    <p>67zip opens, creates and extracts 7z, zip, tar (gz, bz2, xz, zst, lz) and other archives, and opens RAR archives.
+    <p>67zip opens, creates and extracts 7z, zip, tar (gz, bz2, xz, zst, lz) and other archives, and opens RAR archives and ISO/UDF disc images.
     Its own archive engine is written in safe Rust and runs in a sandbox, so a malicious archive
     cannot reach the rest of your files or the network.</p>
     <ul>
       <li>7z with LZMA2 (multi-threaded), PPMd, BZip2, AES-256 and encrypted file names</li>
       <li>zip with AES-256, Zip64 and Unicode names</li>
       <li>RAR5 and older RAR archives, including solid, multi-volume and encrypted ones (reading only)</li>
+      <li>DVD and Blu-ray images: UDF and ISO 9660 (reading only)</li>
       <li>Browse archives like folders, open and edit files inside them</li>
       <li>Light and dark themes that follow your desktop</li>
     </ul>
@@ -23,8 +24,34 @@
     <binary>67zip</binary>
     <binary>67z</binary>
   </provides>
+  <screenshots>
+    <screenshot type="default">
+      <caption>Browsing an archive</caption>
+      <image>https://raw.githubusercontent.com/gamesensicals/67zip/main/docs/screenshots/app-light.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>Dark mode</caption>
+      <image>https://raw.githubusercontent.com/gamesensicals/67zip/main/docs/screenshots/app-dark.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>Creating an archive protected with a password</caption>
+      <image>https://raw.githubusercontent.com/gamesensicals/67zip/main/docs/screenshots/add-dark.png</image>
+    </screenshot>
+  </screenshots>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.1.1" date="2026-11-22">
+      <description>
+        <p>Opens UDF disc images (DVD, Blu-ray), makes password protection easy to find, and reads RAR archives.</p>
+        <ul>
+          <li>UDF (ISO/IEC 13346) disc images, revisions 1.02 to 2.60</li>
+          <li>"Protect with a password" in the Add dialog, and "Add to zip with a password" menus</li>
+          <li>RAR5 and RAR 2.0 to 4.x archives (reading)</li>
+          <li>Optional secure deletion of originals and of decrypted temporary copies</li>
+          <li>Security hardening after a review and a penetration test</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.1.0" date="2026-11-22"/>
   </releases>
 </component>

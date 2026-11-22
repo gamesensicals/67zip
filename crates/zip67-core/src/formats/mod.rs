@@ -5,4 +5,5 @@ pub mod rar;
 pub mod raw;
 pub mod sevenz;
 pub mod tar;
+pub mod udf;
 pub mod zip;

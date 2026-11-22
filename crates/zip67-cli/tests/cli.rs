@@ -88,3 +88,36 @@ fn secure_delete_after_archiving() {
     assert!(st.success());
     assert_eq!(fs::read(out.join("private/d/a.txt")).unwrap(), b"top secret");
 }
+
+#[test]
+fn password_protected_zip() {
+    let tmp = tempfile::tempdir().unwrap();
+    fs::write(tmp.path().join("secret.txt"), b"for your eyes only").unwrap();
+    let st = Command::new(EXE).current_dir(tmp.path()).args(["a", "-bd", "-tzip", "-pcorrect horse", "s.zip", "secret.txt"]).status().unwrap();
+    assert!(st.success());
+    // Every entry is AES-256 encrypted and the plain text is nowhere in the file.
+    let l = Command::new(EXE).current_dir(tmp.path()).args(["l", "-slt", "-pcorrect horse", "s.zip"]).output().unwrap();
+    let listing = String::from_utf8_lossy(&l.stdout);
+    assert!(listing.contains("Encrypted = +") && listing.contains("AES-256"), "{listing}");
+    let raw = fs::read(tmp.path().join("s.zip")).unwrap();
+    assert!(!raw.windows(b"eyes only".len()).any(|w| w == b"eyes only"));
+    // The wrong password is refused, the right one restores the file.
+    let wrong = Command::new(EXE).current_dir(tmp.path()).args(["t", "-bd", "-pnope", "s.zip"]).status().unwrap();
+    assert!(!wrong.success());
+    let st = Command::new(EXE).current_dir(tmp.path()).args(["x", "-bd", "-y", "-pcorrect horse", "-oout", "s.zip"]).status().unwrap();
+    assert!(st.success());
+    assert_eq!(fs::read(tmp.path().join("out/secret.txt")).unwrap(), b"for your eyes only");
+}
+
+#[test]
+fn zipcrypto_is_never_created() {
+    let tmp = tempfile::tempdir().unwrap();
+    fs::write(tmp.path().join("a.txt"), b"abc").unwrap();
+    let o = Command::new(EXE).current_dir(tmp.path()).args(["a", "-bd", "-tzip", "-mem=ZipCrypto", "-pabc", "z.zip", "a.txt"]).output().unwrap();
+    assert!(o.status.success());
+    assert!(String::from_utf8_lossy(&o.stderr).contains("ZipCrypto"), "the user is told why");
+    let l = Command::new(EXE).current_dir(tmp.path()).args(["l", "-slt", "-pabc", "z.zip"]).output().unwrap();
+    assert!(String::from_utf8_lossy(&l.stdout).contains("AES-256"));
+    let bad = Command::new(EXE).current_dir(tmp.path()).args(["a", "-bd", "-tzip", "-mem=rot13", "-pabc", "y.zip", "a.txt"]).status().unwrap();
+    assert_eq!(bad.code(), Some(7));
+}

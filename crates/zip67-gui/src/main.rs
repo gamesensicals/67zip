@@ -18,7 +18,7 @@ fn main() -> iced::Result {
         std::process::exit(zip67_worker::server::run());
     }
     if args.iter().any(|a| a == "--help" || a == "-h") {
-        println!("Usage: 67zip [folder or archive]\n       67zip --add FILES...\n       67zip --extract ARCHIVE | --extract-here ARCHIVE | --extract-to-folder ARCHIVE");
+        println!("Usage: 67zip [folder or archive]\n       67zip --add FILES...\n       67zip --add-with-password FILES...\n       67zip --extract ARCHIVE | --extract-here ARCHIVE | --extract-to-folder ARCHIVE");
         return Ok(());
     }
     let launch = app::Launch::from_args(&args);

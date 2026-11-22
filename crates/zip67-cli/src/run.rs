@@ -40,6 +40,9 @@ pub fn main(raw: Vec<String>) -> i32 {
         println!("67z {}", zip67_core::VERSION);
         return 0;
     }
+    for note in &a.notes {
+        eprintln!("67z: note: {note}");
+    }
     banner();
     if a.help || a.command.is_empty() {
         print!("{HELP}");
@@ -549,7 +552,7 @@ fn info() {
         ("gz bz2", "yes", "yes", "single files"),
         ("xz zst", "yes", "yes", "single files"),
         ("lzma lz", "yes", "yes", "single files"),
-        ("iso", "yes", "no", "ISO 9660, Rock Ridge, Joliet"),
+        ("iso", "yes", "no", "disc images: UDF 1.02-2.60 (DVD, Blu-ray), ISO 9660 + Rock Ridge/Joliet"),
         ("rar", "yes", "no", "RAR5 and RAR 2.0-4.x: solid, volumes, AES, self-extracting; not RAR 1.5 or RAR 2.0 encryption"),
         ("split", "yes", "yes", "any format split into parts: .001, .part1.7z, .7z.part1, .z01 ... .zip, .part1.rar, .r00, .aa"),
     ];

@@ -26,12 +26,16 @@ use crate::style;
 
 pub const ROW_H: f32 = 30.0;
 pub const LIST_ID: &str = "file-list";
+/// The password field of the Add dialog.
+pub const ADD_PASSWORD_ID: &str = "add-password";
 
 /// What to do right after start (from the command line / file manager).
 #[derive(Clone, Debug, Default)]
 pub struct Launch {
     pub path: Option<PathBuf>,
     pub add: Vec<PathBuf>,
+    /// `--add-with-password`: the Add dialog opens set to zip with a password.
+    pub add_protected: bool,
     pub extract: Option<(PathBuf, ExtractHow)>,
 }
 
@@ -49,6 +53,10 @@ impl Launch {
         while let Some(a) = it.next() {
             match a.as_str() {
                 "--add" => l.add.extend(it.by_ref().map(PathBuf::from)),
+                "--add-with-password" => {
+                    l.add_protected = true;
+                    l.add.extend(it.by_ref().map(PathBuf::from));
+                }
                 "--extract" => l.extract = it.next().map(|p| (PathBuf::from(p), ExtractHow::Ask)),
                 "--extract-here" => l.extract = it.next().map(|p| (PathBuf::from(p), ExtractHow::Here)),
                 "--extract-to-folder" => l.extract = it.next().map(|p| (PathBuf::from(p), ExtractHow::ToFolder)),
@@ -184,6 +192,8 @@ pub enum Message {
     // actions
     Add,
     AddTo(&'static str),
+    /// Opens the Add dialog set to zip with "Protect with a password" ticked.
+    AddWithPassword,
     Extract,
     ExtractHere,
     ExtractToFolder,
@@ -211,6 +221,7 @@ pub enum Message {
     AddFormat(Format),
     AddLevel(Level),
     AddMethod(MethodChoice),
+    AddProtect(bool),
     AddPassword(String),
     AddPassword2(String),
     AddShowPassword(bool),
@@ -348,6 +359,10 @@ impl App {
         }
         if !launch.add.is_empty() {
             app.open_add_dialog(launch.add.clone(), None);
+            if launch.add_protected {
+                app.protect_add_as_zip();
+                tasks.push(iced::widget::operation::focus(ADD_PASSWORD_ID));
+            }
         }
         if let Some((p, how)) = launch.extract {
             match how {
@@ -896,6 +911,7 @@ impl App {
             format: fmt,
             level,
             method: MethodChoice(None),
+            protect: false,
             password: String::new(),
             password2: String::new(),
             show_password: false,
@@ -907,6 +923,22 @@ impl App {
             exclude: String::new(),
             error: None,
         }));
+    }
+
+    /// Switches the open Add dialog to zip with "Protect with a password" ticked.
+    pub fn protect_add_as_zip(&mut self) {
+        let zip = FORMATS.iter().copied().find(|f| f.0 == "zip").unwrap_or(FORMATS[1]);
+        if let Some(Modal::Add(f)) = self.modal.as_mut()
+            && f.into.is_none()
+        {
+            let old = zip67_core::ArchiveType::from_id(f.format.0).map(|t| t.extension()).unwrap_or_default();
+            if let Some(stem) = f.archive.strip_suffix(&old) {
+                f.archive = format!("{stem}.zip");
+            }
+            f.format = zip;
+            f.method = MethodChoice(None);
+            f.protect = true;
+        }
     }
 
     pub fn open_extract_dialog(&mut self, archives: Vec<PathBuf>, selection: Option<(PathBuf, Selection, String)>) {
@@ -941,19 +973,24 @@ impl App {
     fn submit_add(&mut self) {
         let cwd = self.current_dir();
         let Some(Modal::Add(f)) = self.modal.as_mut() else { return };
-        if f.password != f.password2 && !f.show_password {
-            f.error = Some("The two passwords do not match.".into());
+        let protect = f.protect && f.into.is_none();
+        if protect && !f.encryptable() {
+            f.error = Some("Only 7z and zip archives can have a password.".into());
             return;
         }
-        if !f.password.is_empty() && !f.encryptable() {
-            f.error = Some("Only 7z and zip archives can be encrypted.".into());
+        if protect && f.password.is_empty() {
+            f.error = Some("Type a password, or untick \"Protect with a password\".".into());
+            return;
+        }
+        if protect && f.password != f.password2 && !f.show_password {
+            f.error = Some("The two passwords do not match.".into());
             return;
         }
         let spec = CreateSpec {
             archive_type: f.format.0.to_string(),
             level: f.level.0,
             method: f.method.0,
-            password: if f.password.is_empty() { None } else { Some(f.password.clone()) },
+            password: if protect { Some(f.password.clone()) } else { None },
             encrypt_names: f.encrypt_names && f.format.0 == "7z",
             solid: f.solid,
             volume_size: f.volume.0,
@@ -1078,6 +1115,7 @@ impl App {
                     let base = if one { zip67_core::util::safe_display(&name) } else { file_name(&self.current_dir()) };
                     items.push((format!("Add to \"{base}.7z\""), Message::AddTo("7z"), true));
                     items.push((format!("Add to \"{base}.zip\""), Message::AddTo("zip"), true));
+                    items.push(("Add to zip with a password…".into(), Message::AddWithPassword, true));
                 }
                 items.push(("Checksums (CRC32, SHA-256…)".into(), Message::Hash(None), any));
                 items.push((String::new(), Message::Nothing, false));
@@ -1543,6 +1581,16 @@ impl App {
                     }
                 }
             },
+            Message::AddWithPassword => {
+                let paths = self.selected_paths();
+                if paths.is_empty() {
+                    self.toast("Select the files and folders to add first.", false);
+                    return Task::none();
+                }
+                self.open_add_dialog(paths, None);
+                self.protect_add_as_zip();
+                return iced::widget::operation::focus(ADD_PASSWORD_ID);
+            }
             Message::AddTo(ext) => {
                 let paths = self.selected_paths();
                 if paths.is_empty() {
@@ -1733,9 +1781,18 @@ impl App {
                 }
                 f.format = fmt;
                 f.method = MethodChoice(None);
+                if !f.encryptable() {
+                    f.protect = false;
+                }
             }),
             Message::AddLevel(l) => self.with_add(|f| f.level = l),
             Message::AddMethod(m) => self.with_add(|f| f.method = m),
+            Message::AddProtect(b) => {
+                self.with_add(|f| f.protect = b && f.encryptable());
+                if b {
+                    return iced::widget::operation::focus(ADD_PASSWORD_ID);
+                }
+            }
             Message::AddPassword(s) => self.with_add(|f| f.password = s),
             Message::AddPassword2(s) => self.with_add(|f| f.password2 = s),
             Message::AddShowPassword(b) => self.with_add(|f| f.show_password = b),
@@ -2114,7 +2171,19 @@ fn accent_stream() -> impl iced::futures::Stream<Item = Message> {
 
 #[cfg(test)]
 mod tests {
-    use super::stem_of;
+    use super::{stem_of, Launch};
+    use std::path::PathBuf;
+
+    #[test]
+    fn add_with_password_from_the_file_manager() {
+        let args: Vec<String> = ["--add-with-password", "a.txt", "--b.txt"].iter().map(|s| s.to_string()).collect();
+        let l = Launch::from_args(&args);
+        assert!(l.add_protected);
+        // Everything after the flag is a file, even if it starts with "--".
+        assert_eq!(l.add, vec![PathBuf::from("a.txt"), PathBuf::from("--b.txt")]);
+        let plain = Launch::from_args(&["--add".to_string(), "a.txt".to_string()]);
+        assert!(!plain.add_protected && plain.add.len() == 1);
+    }
 
     #[test]
     fn extract_folder_names_stay_below_the_folder() {

@@ -9,7 +9,7 @@ use iced::{Alignment, Element, Font, Length, Padding};
 
 use zip67_core::util::{format_local_time, human_size, safe_display};
 
-use crate::app::{App, Location, Message, ROW_H};
+use crate::app::{App, Location, Message, ADD_PASSWORD_ID, ROW_H};
 use crate::forms::*;
 use crate::icons::{icon, Icon};
 use crate::listing::{self, SortKey};
@@ -639,29 +639,41 @@ impl App {
         if !into && f.format.0 == "7z" {
             c = c.push(field("", checkbox(f.solid).label("Solid archive (smaller, slower to extract single files)").on_toggle(Message::AddSolid).text_size(13)));
         }
-        if !into && f.encryptable() {
+        if into {
+            let note = match f.into.as_ref().and_then(|i| i.password.as_ref()) {
+                Some(_) => "The added files get this archive's password.",
+                None => "This archive has no password, so the added files won't have one either. To protect files, create a new archive with \"Add to zip with a password…\".",
+            };
+            c = c.push(row![icon(Icon::Lock, 16.0), muted(note)].spacing(8).align_y(Alignment::Center));
+        } else {
             c = c.push(rule::horizontal(1).style(style::rule));
-            c = c.push(field(
-                "Password",
-                row![
-                    input("No encryption", &f.password, Message::AddPassword).secure(!f.show_password).width(Length::Fill),
-                    button(icon(Icon::Eye, 18.0)).padding(7).style(style::tool_button).on_press(Message::AddShowPassword(!f.show_password))
-                ]
-                .spacing(6)
-                .align_y(Alignment::Center),
-            ));
-            if !f.show_password && !f.password.is_empty() {
-                c = c.push(field("Repeat", input("Type it again", &f.password2, Message::AddPassword2).secure(true)));
-            }
-            if !f.password.is_empty() {
+            // Always shown, so the option is easy to find: greyed out for formats without encryption.
+            let protect = checkbox(f.protect && f.encryptable()).label("Protect with a password").text_size(14);
+            let protect = if f.encryptable() { protect.on_toggle(Message::AddProtect) } else { protect };
+            c = c.push(field("Encryption", row![icon(Icon::Lock, 18.0), protect].spacing(8).align_y(Alignment::Center)));
+            if !f.encryptable() {
+                c = c.push(field("", muted("Only 7z and zip archives can have a password.")));
+            } else if f.protect {
+                c = c.push(field(
+                    "Password",
+                    row![
+                        input("Type a password", &f.password, Message::AddPassword).secure(!f.show_password).id(ADD_PASSWORD_ID).width(Length::Fill),
+                        button(icon(Icon::Eye, 18.0)).padding(7).style(style::tool_button).on_press(Message::AddShowPassword(!f.show_password))
+                    ]
+                    .spacing(6)
+                    .align_y(Alignment::Center),
+                ));
+                if !f.show_password {
+                    c = c.push(field("Repeat", input("Type it again", &f.password2, Message::AddPassword2).secure(true)));
+                }
                 let note = if f.format.0 == "7z" {
-                    "AES-256. With 7z you can also hide the file names."
+                    "AES-256 encryption. With 7z you can also hide the file names."
                 } else {
-                    "AES-256 (WinZip format, detects tampering). Windows Explorer cannot open AES zips; 7-Zip and 67zip can."
+                    "AES-256 encryption (WinZip format, detects tampering). 7-Zip, 67zip and most archive apps open it; Windows Explorer can't."
                 };
                 c = c.push(field("", muted(note)));
                 if f.format.0 == "7z" {
-                    c = c.push(field("", checkbox(f.encrypt_names).label("Encrypt file names").on_toggle(Message::AddEncryptNames).text_size(13)));
+                    c = c.push(field("", checkbox(f.encrypt_names).label("Encrypt file names too").on_toggle(Message::AddEncryptNames).text_size(13)));
                 }
             }
         }
