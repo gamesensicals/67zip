@@ -43,6 +43,10 @@ pub struct ArchiveInfo {
     /// Bytes before the archive start (self-extracting stubs).
     pub offset: u64,
     pub warnings: Vec<String>,
+    /// Damage found while opening (truncated archive, broken headers);
+    /// reported with every extraction and test.
+    #[serde(default)]
+    pub problems: Vec<String>,
 }
 
 /// Receives entries during extraction/testing, in archive order.
@@ -98,6 +102,16 @@ pub fn open(path: &Path, opts: &OpenOptions) -> Result<Box<dyn ArchiveReader>> {
         return open_reader(src, size, &crate::source::logical_name(path), opts);
     };
     let n = set.parts.len();
+    if matches!(set.scheme, crate::source::Scheme::PartBeforeExt | crate::source::Scheme::RarOld) && starts_with_rar(&set.parts[0]) {
+        // RAR volumes each have their own headers: not a byte-level split.
+        let mut parts = Vec::with_capacity(n);
+        for p in &set.parts {
+            let f = std::fs::File::open(p)?;
+            let len = f.metadata()?.len();
+            parts.push((Box::new(std::io::BufReader::with_capacity(64 * 1024, f)) as Box<dyn ReadSeek>, len));
+        }
+        return Ok(Box::new(crate::formats::rar::RarReader::open_volumes(parts, opts)?));
+    }
     let mut opts = opts.clone();
     if set.scheme == crate::source::Scheme::SplitZip {
         opts.volume_offsets = set.offsets()?;
@@ -116,6 +130,11 @@ pub fn open(path: &Path, opts: &OpenOptions) -> Result<Box<dyn ArchiveReader>> {
     }
 }
 
+fn starts_with_rar(path: &Path) -> bool {
+    let mut head = [0u8; 8];
+    std::fs::File::open(path).and_then(|mut f| f.read_exact(&mut head)).is_ok() && crate::formats::rar::is_rar(&head)
+}
+
 /// Opens an archive from any seekable source.
 pub fn open_reader(mut src: Box<dyn ReadSeek>, size: u64, name: &str, opts: &OpenOptions) -> Result<Box<dyn ArchiveReader>> {
     let t = match opts.format {
@@ -128,6 +147,7 @@ pub fn open_reader(mut src: Box<dyn ReadSeek>, size: u64, name: &str, opts: &Ope
         Container::Raw => Ok(Box::new(crate::formats::raw::RawReader::open(src, size, name, t.compression, opts)?)),
         Container::SevenZ => Ok(Box::new(crate::formats::sevenz::SevenZReader::open(src, size, opts)?)),
         Container::Iso => Ok(Box::new(crate::formats::iso::IsoReader::open(src, size, opts)?)),
+        Container::Rar => Ok(Box::new(crate::formats::rar::RarReader::open(src, size, opts)?)),
     }
 }
 

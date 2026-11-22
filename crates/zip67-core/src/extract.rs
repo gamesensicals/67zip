@@ -522,6 +522,7 @@ pub fn extract_to(
     let mut v = FsVisitor::new(dest, opts.clone(), prompt, size)?;
     let result = reader.extract(&*matcher, &mut v, progress);
     let mut report = v.into_report();
+    report.warnings.extend(reader.info().problems);
     if unsafe_count > 0 {
         report.warnings.push(format!("{unsafe_count} entries with unsafe paths (absolute or '..') were not extracted"));
     }
@@ -562,6 +563,7 @@ pub fn test(reader: &mut dyn ArchiveReader, selection: &Selection, progress: &Pr
     progress.set_total(total);
     let mut t = Tester { report: ExtractReport::default() };
     reader.extract(&*matcher, &mut t, progress)?;
+    t.report.warnings.extend(reader.info().problems);
     Ok(t.report)
 }
 

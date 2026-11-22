@@ -300,6 +300,7 @@ pub fn new_writer(file: File, opts: &CreateOptions, single_name: Option<&str>) -
         Container::Raw => Box::new(crate::formats::raw::RawWriter::new(file, t.compression, opts.level, threads, single_name, opts.size_hint)?),
         Container::SevenZ => Box::new(crate::formats::sevenz::SevenZWriter::new(file, opts)?),
         Container::Iso => return Err(Error::invalid("ISO images can only be read")),
+        Container::Rar => return Err(Error::invalid("RAR archives can only be read")),
     })
 }
 

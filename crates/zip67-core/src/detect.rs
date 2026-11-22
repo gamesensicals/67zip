@@ -17,6 +17,8 @@ pub enum Container {
     /// A single compressed file (`.gz`, `.xz`, ...), shown as one entry.
     Raw,
     Iso,
+    /// RAR (reading only).
+    Rar,
 }
 
 /// Stream compression wrapped around the container (tar and raw only).
@@ -79,6 +81,7 @@ impl ArchiveType {
     pub const ZIP: ArchiveType = ArchiveType::new(Container::Zip, Compression::None);
     pub const TAR: ArchiveType = ArchiveType::new(Container::Tar, Compression::None);
     pub const ISO: ArchiveType = ArchiveType::new(Container::Iso, Compression::None);
+    pub const RAR: ArchiveType = ArchiveType::new(Container::Rar, Compression::None);
 
     /// Short id such as `7z`, `zip`, `tar.gz`, `xz`.
     pub fn id(&self) -> String {
@@ -86,6 +89,7 @@ impl ArchiveType {
             (Container::SevenZ, _) => "7z".into(),
             (Container::Zip, _) => "zip".into(),
             (Container::Iso, _) => "iso".into(),
+            (Container::Rar, _) => "rar".into(),
             (Container::Tar, Compression::None) => "tar".into(),
             (Container::Tar, c) => format!("tar.{}", c.suffix()),
             (Container::Raw, c) => c.suffix().into(),
@@ -110,6 +114,7 @@ impl ArchiveType {
             "zip" => Self::ZIP,
             "tar" => Self::TAR,
             "iso" => Self::ISO,
+            "rar" | "cbr" => Self::RAR,
             "tgz" | "tbz" | "tbz2" | "txz" | "tzst" => ArchiveType::new(Container::Tar, comp(&id)?),
             s if s.starts_with("tar.") => ArchiveType::new(Container::Tar, comp(&s[4..])?),
             s => ArchiveType::new(Container::Raw, comp(s)?),
@@ -127,6 +132,7 @@ impl ArchiveType {
             (Container::SevenZ, _) => "7z".into(),
             (Container::Zip, _) => "Zip".into(),
             (Container::Iso, _) => "ISO image".into(),
+            (Container::Rar, _) => "RAR".into(),
             (Container::Tar, Compression::None) => "Tar".into(),
             (Container::Tar, c) => format!("Tar + {}", c.display()),
             (Container::Raw, c) => c.display().into(),
@@ -134,7 +140,7 @@ impl ArchiveType {
     }
 
     pub fn can_write(&self) -> bool {
-        !matches!(self.container, Container::Iso)
+        !matches!(self.container, Container::Iso | Container::Rar)
     }
     pub fn supports_encryption(&self) -> bool {
         matches!(self.container, Container::SevenZ | Container::Zip)
@@ -180,6 +186,8 @@ impl ArchiveType {
             (".epub", "zip"),
             (".tar", "tar"),
             (".iso", "iso"),
+            (".rar", "rar"),
+            (".cbr", "rar"),
             (".gz", "gz"),
             (".bz2", "bz2"),
             (".xz", "xz"),
@@ -238,8 +246,8 @@ pub fn detect(src: &mut dyn ReadSeek, name: &str, limits: &Limits) -> Result<Arc
     if head.starts_with(b"PK\x03\x04") || head.starts_with(b"PK\x05\x06") || head.starts_with(b"PK\x07\x08") || head.starts_with(b"PK00PK") {
         return Ok(ArchiveType::ZIP);
     }
-    if head.starts_with(b"Rar!\x1a\x07") {
-        return Err(Error::unsupported("RAR archives (67zip does not read RAR yet)"));
+    if crate::formats::rar::is_rar(&head) {
+        return Ok(ArchiveType::RAR);
     }
     if let Some(c) = compression_magic(&head) {
         src.seek(SeekFrom::Start(0))?;
@@ -260,6 +268,10 @@ pub fn detect(src: &mut dyn ReadSeek, name: &str, limits: &Limits) -> Result<Arc
         let inner = peek_decoded_tar(src, Compression::Lzma, limits);
         return Ok(ArchiveType::new(if inner { Container::Tar } else { Container::Raw }, Compression::Lzma));
     }
+    // Self-extracting RAR archives.
+    if crate::formats::rar::find_sfx_signature(&head).is_some() || (head.starts_with(b"MZ") && sfx_rar(src)?) {
+        return Ok(ArchiveType::RAR);
+    }
     // Self-extracting or prefixed zip files: look for the end record.
     if crate::formats::zip::find_eocd(src).is_ok() {
         return Ok(ArchiveType::ZIP);
@@ -271,6 +283,15 @@ pub fn detect(src: &mut dyn ReadSeek, name: &str, limits: &Limits) -> Result<Arc
         }
     }
     Err(Error::UnsupportedFormat)
+}
+
+/// Looks for a RAR signature in the first 4 MiB of a program.
+fn sfx_rar(src: &mut dyn ReadSeek) -> Result<bool> {
+    src.seek(SeekFrom::Start(0))?;
+    let mut head = vec![0u8; 4 << 20];
+    let n = crate::io::read_full(src, &mut head)?;
+    head.truncate(n);
+    Ok(crate::formats::rar::find_sfx_signature(&head).is_some())
 }
 
 fn peek_decoded_tar(src: &mut dyn ReadSeek, c: Compression, limits: &Limits) -> bool {
@@ -309,7 +330,7 @@ mod tests {
 
     #[test]
     fn ids_roundtrip() {
-        for id in ["7z", "zip", "tar", "tar.gz", "tar.bz2", "tar.xz", "tar.zst", "tar.lz", "gz", "xz", "zst", "lzma", "iso"] {
+        for id in ["7z", "zip", "rar", "tar", "tar.gz", "tar.bz2", "tar.xz", "tar.zst", "tar.lz", "gz", "xz", "zst", "lzma", "iso"] {
             assert_eq!(ArchiveType::from_id(id).unwrap().id(), id);
         }
         assert_eq!(ArchiveType::from_file_name("x.TGZ").unwrap().id(), "tar.gz");

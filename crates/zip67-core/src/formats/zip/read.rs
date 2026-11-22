@@ -518,6 +518,7 @@ impl ArchiveReader for ZipReader {
             headers_size: Some(self.cd_size),
             offset: self.base,
             warnings: self.warnings.clone(),
+            problems: Vec::new(),
         }
     }
 
