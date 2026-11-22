@@ -56,3 +56,9 @@ name = "rar"
 path = "fuzz_targets/rar.rs"
 test = false
 doc = false
+
+[[bin]]
+name = "udf"
+path = "fuzz_targets/udf.rs"
+test = false
+doc = false

@@ -113,7 +113,7 @@ impl ArchiveType {
             "7z" => Self::SEVEN_Z,
             "zip" => Self::ZIP,
             "tar" => Self::TAR,
-            "iso" => Self::ISO,
+            "iso" | "udf" => Self::ISO,
             "rar" | "cbr" => Self::RAR,
             "tgz" | "tbz" | "tbz2" | "txz" | "tzst" => ArchiveType::new(Container::Tar, comp(&id)?),
             s if s.starts_with("tar.") => ArchiveType::new(Container::Tar, comp(&s[4..])?),
@@ -186,6 +186,7 @@ impl ArchiveType {
             (".epub", "zip"),
             (".tar", "tar"),
             (".iso", "iso"),
+            (".udf", "iso"),
             (".rar", "rar"),
             (".cbr", "rar"),
             (".gz", "gz"),
@@ -260,6 +261,11 @@ pub fn detect(src: &mut dyn ReadSeek, name: &str, limits: &Limits) -> Result<Arc
     // ISO 9660: "CD001" at sector 16 + 1.
     let mut iso = [0u8; 6];
     if src.seek(SeekFrom::Start(0x8000)).is_ok() && crate::io::read_full(src, &mut iso)? == 6 && &iso[1..6] == b"CD001" {
+        return Ok(ArchiveType::ISO);
+    }
+    // UDF (ISO/IEC 13346) without ISO 9660: "BEA01" ... "NSR02"/"NSR03".
+    let end = src.seek(SeekFrom::End(0))?;
+    if crate::formats::udf::has_udf_vrs(src, end) {
         return Ok(ArchiveType::ISO);
     }
     let by_name = ArchiveType::from_file_name(name);
