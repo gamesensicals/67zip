@@ -22,6 +22,9 @@ pub struct OpenOptions {
     pub threads: usize,
     /// Skip detection and use this type.
     pub format: Option<ArchiveType>,
+    /// For split zips (`.z01` ... `.zip`): start offset of every part in the
+    /// joined stream, because offsets inside such zips are per part.
+    pub volume_offsets: Vec<u64>,
 }
 
 /// Archive-wide properties, for the "Info" dialog.
@@ -86,16 +89,31 @@ pub fn is_entry_local(err: &Error) -> bool {
     )
 }
 
-/// Opens an archive file. Split archives (`.001`) are joined automatically.
+/// Opens an archive file. Split archives (`.001`, `.part1.7z`, `.z01`,
+/// ...) are joined automatically, from whichever part is given.
 pub fn open(path: &Path, opts: &OpenOptions) -> Result<Box<dyn ArchiveReader>> {
-    let (src, size) = crate::source::open_source(path)?;
-    let name = crate::source::logical_name(path);
-    let volumes = crate::source::volume_parts(path).map(|p| p.len() as u32).unwrap_or(1);
-    let reader = open_reader(src, size, &name, opts)?;
-    if volumes > 1 {
-        return Ok(Box::new(WithVolumes { inner: reader, volumes }));
+    let set = crate::source::volume_set(path)?;
+    let Some(set) = set else {
+        let (src, size) = crate::source::open_source(path)?;
+        return open_reader(src, size, &crate::source::logical_name(path), opts);
+    };
+    let n = set.parts.len();
+    let mut opts = opts.clone();
+    if set.scheme == crate::source::Scheme::SplitZip {
+        opts.volume_offsets = set.offsets()?;
+        opts.format = Some(ArchiveType::ZIP);
     }
-    Ok(reader)
+    let mv = crate::source::MultiVolume::open(&set.parts)?;
+    let size = mv.len();
+    match open_reader(Box::new(mv), size, &set.logical, &opts) {
+        Ok(reader) => Ok(Box::new(WithVolumes { inner: reader, volumes: n as u32 })),
+        Err(e @ (Error::Corrupt(_) | Error::UnsupportedFormat)) => Err(Error::Corrupt(format!(
+            "{e}. This is a split archive and {n} part{} {} found; a later part may be missing or incomplete",
+            if n == 1 { "" } else { "s" },
+            if n == 1 { "was" } else { "were" }
+        ))),
+        Err(e) => Err(e),
+    }
 }
 
 /// Opens an archive from any seekable source.

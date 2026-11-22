@@ -147,10 +147,16 @@ impl ArchiveType {
         matches!(self.container, Container::SevenZ | Container::Zip | Container::Tar)
     }
 
-    /// Guess from a file name alone.
+    /// Guess from a file name alone (split-part names count as their
+    /// archive: `a.part2.7z`, `a.7z.001`, `a.z01` ...).
     pub fn from_file_name(name: &str) -> Option<Self> {
+        Self::from_plain_name(&crate::source::logical_name_str(name))
+    }
+
+    /// Guess from the extension, without looking at split-part names.
+    pub fn from_plain_name(name: &str) -> Option<Self> {
         let lower = name.to_ascii_lowercase();
-        let lower = lower.strip_suffix(".001").unwrap_or(&lower);
+        let lower = lower.as_str();
         for (suffix, t) in [
             (".tar.gz", "tar.gz"),
             (".tgz", "tar.gz"),
@@ -229,8 +235,11 @@ pub fn detect(src: &mut dyn ReadSeek, name: &str, limits: &Limits) -> Result<Arc
     if head.starts_with(&SIG_7Z) {
         return Ok(ArchiveType::SEVEN_Z);
     }
-    if head.starts_with(b"PK\x03\x04") || head.starts_with(b"PK\x05\x06") || head.starts_with(b"PK\x07\x08") {
+    if head.starts_with(b"PK\x03\x04") || head.starts_with(b"PK\x05\x06") || head.starts_with(b"PK\x07\x08") || head.starts_with(b"PK00PK") {
         return Ok(ArchiveType::ZIP);
+    }
+    if head.starts_with(b"Rar!\x1a\x07") {
+        return Err(Error::unsupported("RAR archives (67zip does not read RAR yet)"));
     }
     if let Some(c) = compression_magic(&head) {
         src.seek(SeekFrom::Start(0))?;

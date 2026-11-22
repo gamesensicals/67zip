@@ -19,7 +19,7 @@ pub fn run(data: &[u8], format: Option<ArchiveType>, name: &str) {
     };
     // Alternate between the single- and multi-threaded decoders.
     let threads = if data.len() % 2 == 0 { 1 } else { 2 };
-    let opts = OpenOptions { password: Some(Password::new("fuzz")), limits, threads, format };
+    let opts = OpenOptions { password: Some(Password::new("fuzz")), limits, threads, format, ..Default::default() };
     if let Ok(mut r) = open_reader(Box::new(Cursor::new(data.to_vec())), data.len() as u64, name, &opts) {
         let _ = r.info();
         let _ = test(r.as_mut(), &Selection::All, &Progress::new());

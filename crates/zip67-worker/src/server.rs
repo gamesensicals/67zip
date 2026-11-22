@@ -25,6 +25,7 @@ fn send(out: &Out, ev: &Event) {
 }
 
 fn parts_of(archive: &Path) -> Vec<PathBuf> {
+    // All parts of a split archive must be readable inside the sandbox.
     zip67_core::source::volume_parts(archive).unwrap_or_else(|| vec![archive.to_path_buf()])
 }
 

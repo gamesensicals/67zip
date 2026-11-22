@@ -53,7 +53,7 @@ pub fn split_file(path: &Path, part_size: u64, progress: &Progress) -> Result<Ve
 
 /// Joins `first` (`x.001`) and the following parts into `output`.
 pub fn combine(first: &Path, output: &Path, progress: &Progress) -> Result<u64> {
-    let parts = crate::source::volume_parts(first).ok_or_else(|| Error::invalid("the first part must end with .001"))?;
+    let parts = crate::source::volume_set(first)?.ok_or_else(|| Error::invalid("this is not a part of a split file"))?.parts;
     let total: u64 = parts.iter().filter_map(|p| fs::metadata(p).ok()).map(|m| m.len()).sum();
     progress.set_total(total);
     let mut w = BufWriter::new(fs::OpenOptions::new().write(true).create_new(true).open(output)?);

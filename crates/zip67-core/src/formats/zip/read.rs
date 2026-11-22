@@ -54,6 +54,10 @@ pub struct Eocd {
     pub comment: Vec<u8>,
     /// Position of the first byte after the central directory.
     pub cd_end: u64,
+    /// Number of the disk (part) holding the end record, 0-based.
+    pub disk: u32,
+    /// Disk where the central directory starts.
+    pub cd_disk: u32,
 }
 
 /// Finds and parses the end-of-central-directory record (and Zip64 records).
@@ -89,8 +93,8 @@ pub fn find_eocd(src: &mut dyn ReadSeek) -> Result<Eocd> {
     }
     let i = found.ok_or(Error::UnsupportedFormat)?;
     let mut b = Bytes::new(&tail[i + 4..], "zip end record");
-    let _disk = b.u16()?;
-    let _cd_disk = b.u16()?;
+    let mut disk = u32::from(b.u16()?);
+    let mut cd_disk = u32::from(b.u16()?);
     let _n_disk = b.u16()?;
     let mut entries = b.u16()? as u64;
     let mut cd_size = b.u32()? as u64;
@@ -122,8 +126,8 @@ pub fn find_eocd(src: &mut dyn ReadSeek) -> Result<Eocd> {
                     let _size = b.u64()?;
                     let _made = b.u16()?;
                     let _need = b.u16()?;
-                    let _disk = b.u32()?;
-                    let _cd_disk = b.u32()?;
+                    disk = b.u32()?;
+                    cd_disk = b.u32()?;
                     let _n_disk = b.u64()?;
                     entries = b.u64()?;
                     cd_size = b.u64()?;
@@ -134,7 +138,7 @@ pub fn find_eocd(src: &mut dyn ReadSeek) -> Result<Eocd> {
             }
         }
     }
-    Ok(Eocd { record_pos, entries, cd_size, cd_offset, comment, cd_end })
+    Ok(Eocd { record_pos, entries, cd_size, cd_offset, comment, cd_end, disk, cd_disk })
 }
 
 #[derive(Clone, Debug)]
@@ -179,10 +183,18 @@ impl ZipReader {
         if eocd.entries > limits.max_entries {
             return Err(Error::limit("too many entries in zip archive"));
         }
+        let vols = &opts.volume_offsets;
+        if !vols.is_empty() && eocd.disk as usize + 1 != vols.len() {
+            return Err(Error::corrupt(format!(
+                "this split zip has {} parts, but {} were found",
+                eocd.disk as u64 + 1,
+                vols.len()
+            )));
+        }
         // Where the CD really is tells us how many bytes were prepended.
         let real_cd_start = eocd.cd_end.checked_sub(eocd.cd_size).ok_or_else(|| Error::corrupt("bad central directory size"))?;
         let base = real_cd_start.checked_sub(eocd.cd_offset).ok_or_else(|| Error::corrupt("bad central directory offset"))?;
-        if base > 0 {
+        if base > 0 && opts.volume_offsets.is_empty() {
             warnings.push(format!("{base} bytes of data before the zip archive (self-extracting stub?)"));
         }
         src.seek(SeekFrom::Start(real_cd_start))?;
@@ -211,7 +223,7 @@ impl ZipReader {
             let name_len = b.u16()? as usize;
             let extra_len = b.u16()? as usize;
             let comment_len = b.u16()? as usize;
-            let _disk = b.u16()?;
+            let mut disk_start = u32::from(b.u16()?);
             let _int_attr = b.u16()?;
             let ext_attr = b.u32()?;
             let mut local_offset = b.u32()? as u64;
@@ -242,6 +254,9 @@ impl ZipReader {
                         }
                         if local_offset == 0xFFFF_FFFF {
                             local_offset = d.u64()?;
+                        }
+                        if disk_start == 0xFFFF && d.remaining() >= 4 {
+                            disk_start = d.u32()?;
                         }
                     }
                     0x5455 if !data.is_empty() => {
@@ -334,7 +349,15 @@ impl ZipReader {
                 entry.comment = Some(decode_name(comment));
             }
             entries.push(entry);
-            metas.push(Meta { method, flags, crc, csize, usize, local_offset, dos_time, aes, limit: 0 });
+            // Offsets are relative to the part (disk) an entry starts on in
+            // split zips; otherwise to the start of the archive.
+            let abs_offset = if vols.is_empty() {
+                base.checked_add(local_offset)
+            } else {
+                vols.get(disk_start as usize).and_then(|v| v.checked_add(local_offset))
+            }
+            .ok_or_else(|| Error::corrupt("entry refers to a missing part"))?;
+            metas.push(Meta { method, flags, crc, csize, usize, local_offset: abs_offset, dos_time, aes, limit: 0 });
         }
 
         // Each entry's data must end before the next local header starts.
@@ -347,7 +370,7 @@ impl ZipReader {
             }
         }
         for (k, &i) in order.iter().enumerate() {
-            let next = order.get(k + 1).map(|&j| metas[j].local_offset).unwrap_or(eocd.cd_offset);
+            let next = order.get(k + 1).map(|&j| metas[j].local_offset).unwrap_or(real_cd_start);
             metas[i].limit = next;
         }
 
@@ -376,7 +399,8 @@ impl ZipReader {
         password: Option<&Password>,
         limits: &Limits,
     ) -> Result<Box<dyn Read + Send + 'a>> {
-        let local = base + meta.local_offset;
+        let _ = base;
+        let local = meta.local_offset;
         src.seek(SeekFrom::Start(local))?;
         let mut h = [0u8; 30];
         src.read_exact(&mut h)?;
@@ -392,7 +416,7 @@ impl ZipReader {
         if data_end > file_size {
             return Err(Error::corrupt("entry data runs past the end of the file"));
         }
-        if data_end > base + meta.limit {
+        if data_end > meta.limit {
             return Err(Error::limit("entry overlaps the next entry (zip bomb)"));
         }
         src.seek(SeekFrom::Start(data_start))?;
