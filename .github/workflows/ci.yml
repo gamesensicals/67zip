@@ -48,5 +48,7 @@ jobs:
         run: |
           cd fuzz
           for t in $(cargo fuzz list); do
-            cargo fuzz run "$t" "seeds/$t" -- -max_total_time=60 -rss_limit_mb=2048 -timeout=20
+            # Work on a copy so new inputs never land in the committed seeds.
+            mkdir -p corpus && cp -r "seeds/$t" "corpus/$t"
+            cargo fuzz run "$t" "corpus/$t" -- -max_total_time=60 -rss_limit_mb=2048 -timeout=20
           done
