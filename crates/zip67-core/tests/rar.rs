@@ -46,7 +46,7 @@ impl EntryVisitor for Collect {
 fn password_for(name: &str) -> Option<&'static str> {
     if name.starts_with("rar_encryption") {
         Some("12345678")
-    } else if name.contains("encrypted") {
+    } else if name.contains("encrypted") || name.contains("psw") {
         Some("password")
     } else {
         None
@@ -211,4 +211,55 @@ fn fuzz_finds_fail_cleanly() {
             let _ = r.extract(&|_| true, &mut Collect::default(), &Progress::new());
         }
     }
+}
+
+#[test]
+fn link_tricks_cannot_escape() {
+    use zip67_core::extract::{extract_to, ExtractOptions, Overwrite, Selection};
+    // "up -> .." followed by "up/pwned.txt", and links to "../../missing"
+    // and an absolute Windows junction.
+    for name in ["rarfile-rar5-evil-symlink-traversal.rar", "rarfile-rar5-symlink-win.rar", "rarfile-rar3-symlink-unix.rar"] {
+        let tmp = tempfile::tempdir().unwrap();
+        let dest = tmp.path().join("dest");
+        std::fs::create_dir(&dest).unwrap();
+        let mut r = open(&data().join(name), &OpenOptions::default()).unwrap();
+        let opts = ExtractOptions { overwrite: Overwrite::Always, ..Default::default() };
+        let _ = extract_to(r.as_mut(), &dest, &Selection::All, &opts, None, &Progress::new());
+        assert!(!tmp.path().join("pwned.txt").exists(), "{name}: wrote outside the destination");
+        for e in walk(&dest) {
+            if let Ok(t) = std::fs::read_link(&e) {
+                let resolved = e.parent().unwrap().join(&t);
+                let canon = normalize(&resolved);
+                assert!(canon.starts_with(&dest), "{name}: link {} -> {} leaves the destination", e.display(), t.display());
+            }
+        }
+    }
+}
+
+fn walk(d: &Path) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    for e in std::fs::read_dir(d).unwrap() {
+        let p = e.unwrap().path();
+        let meta = std::fs::symlink_metadata(&p).unwrap();
+        if meta.is_dir() {
+            out.extend(walk(&p));
+        }
+        out.push(p);
+    }
+    out
+}
+
+/// Lexical normalisation (no symlink following).
+fn normalize(p: &Path) -> PathBuf {
+    let mut out = PathBuf::new();
+    for c in p.components() {
+        match c {
+            std::path::Component::ParentDir => {
+                out.pop();
+            }
+            std::path::Component::CurDir => {}
+            other => out.push(other),
+        }
+    }
+    out
 }

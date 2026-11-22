@@ -164,6 +164,19 @@ pub fn human_size(n: u64) -> String {
 }
 
 /// Number of worker threads to use by default.
+/// Sum of sizes that come from archive headers: saturates instead of
+/// overflowing (a crafted archive can declare any sizes).
+pub fn total_size(sizes: impl IntoIterator<Item = u64>) -> u64 {
+    sizes.into_iter().fold(0u64, u64::saturating_add)
+}
+
+/// `n` random bytes as hex, for unpredictable temporary names.
+pub fn random_hex(n: usize) -> String {
+    let mut b = vec![0u8; n];
+    let _ = getrandom::fill(&mut b);
+    b.iter().map(|x| format!("{x:02x}")).collect()
+}
+
 pub fn default_threads() -> usize {
     std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1).clamp(1, 256)
 }

@@ -300,6 +300,7 @@ impl RarReader {
                 info.solid = vh.solid;
                 info.encrypted_headers = vh.encrypted_headers;
                 comment = vh.comment.clone().map(|c| (0, c));
+                info.comment = vh.old_comment.clone();
             }
             info.physical_size += size;
             info.problems.extend(vh.warnings.iter().cloned());
@@ -414,7 +415,7 @@ impl RarReader {
             e.unsafe_path = unsafe_path;
             e.size = if has_stream(r) || matches!(r.link, Link::Copy(_)) { r.size } else { 0 };
             e.size_known = r.size_known;
-            e.packed_size = Some(it.segs.iter().map(|s| s.len).sum());
+            e.packed_size = Some(crate::util::total_size(it.segs.iter().map(|s| s.len)));
             if let Some((s, ns)) = r.mtime {
                 e.mtime = Some(s);
                 e.mtime_nanos = ns;
@@ -431,6 +432,7 @@ impl RarReader {
             let mac = matches!(r.crypt, Some(Crypt::V5 { mac: true, .. }));
             e.crc32 = if mac || it.missing.is_some() { None } else { r.crc };
             e.encrypted = r.crypt.is_some();
+            e.comment = r.comment.clone();
             e.method = method_text(r);
             e.link_target = match &r.link {
                 Link::Symlink(t) | Link::Hardlink(t) | Link::Copy(t) => Some(t.clone()),
@@ -455,20 +457,25 @@ impl RarReader {
 
         let mut reader =
             RarReader { vols, items, entries, groups, group_window, password: opts.password.clone(), limits: opts.limits.clone(), keys, info };
+        for i in 0..reader.items.len() {
+            let Some(c) = reader.items[i].rec.comment_rec.clone() else { continue };
+            if reader.items[i].segs.len() == 1
+                && let Ok(bytes) = reader.read_comment(*c)
+            {
+                reader.entries[i].comment = super::comment_text(&bytes);
+            }
+        }
         if let Some((_, rec)) = comment
             && let Ok(bytes) = reader.read_comment(rec)
+            && let Some(t) = super::comment_text(&bytes)
         {
-            let text = if rar5 { String::from_utf8_lossy(&bytes).into_owned() } else { crate::util::decode_name(&bytes) };
-            let text = text.trim_end_matches('\0').trim().to_string();
-            if !text.is_empty() {
-                reader.info.comment = Some(text);
-            }
+            reader.info.comment = Some(t);
         }
         Ok(reader)
     }
 
     fn read_comment(&mut self, rec: FileRec) -> Result<Vec<u8>> {
-        if rec.crypt.is_some() || !rec.size_known || rec.size > 1 << 20 {
+        if !rec.size_known || rec.size > 1 << 20 || rec.crypt.is_some() && self.password.is_none() {
             return Err(Error::unsupported("comment"));
         }
         let item = Item { segs: vec![Segment { vol: 0, offset: rec.data_offset, len: rec.data_len }], rec, missing: None };
@@ -480,6 +487,14 @@ impl RarReader {
             let mut up = Unpacker::new(codec_of(&item.rec)?, self.limits.max_decoder_memory);
             up.begin(false, window_size(item.rec.dict, Some(item.rec.size)), Some(item.rec.size))?;
             FileDecoder::new(&mut up, stream, Some(item.rec.size)).read_to_end(&mut out)?;
+        }
+        // Never show a comment that did not decode correctly (for example
+        // with a wrong password).
+        if let Some(c) = item.rec.crc
+            && item.rec.crypt.as_ref().is_none_or(|c| !matches!(c, Crypt::V5 { mac: true, .. }))
+            && crate::crc::crc32(&out) != c
+        {
+            return Err(Error::Checksum("comment".into()));
         }
         Ok(out)
     }
@@ -563,7 +578,7 @@ impl RarReader {
         let (stream, verified, mac) = data_stream(&mut self.keys, &self.vols, self.password.as_ref(), item)?;
         let encrypted = rec.crypt.is_some();
         let expected = rec.size_known.then_some(rec.size);
-        let packed: u64 = item.segs.iter().map(|s| s.len).sum();
+        let packed: u64 = crate::util::total_size(item.segs.iter().map(|s| s.len));
         let mut window = 0;
         if rec.method != 0 {
             window = self.groups[data].and_then(|g| self.group_window.get(&g).copied()).unwrap_or_else(|| window_size(rec.dict, expected));

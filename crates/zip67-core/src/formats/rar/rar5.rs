@@ -413,6 +413,10 @@ fn extra_record(rec: &mut FileRec, kind: u64, f: &mut Rd) -> Result<()> {
 /// paths; keep relative ones usable, absolute ones stay absolute (and are
 /// refused on extraction as escaping links).
 fn windows_link_target(t: &str) -> String {
-    let t = t.strip_prefix("\\??\\").map(|s| format!("/{s}")).unwrap_or_else(|| t.to_string());
-    t.replace('\\', "/")
+    let t = t.replace('\\', "/");
+    // "\??\C:\dir" is an absolute NT path: keep it absolute (and refused).
+    match t.strip_prefix("/??/") {
+        Some(rest) => format!("/{rest}"),
+        None => t,
+    }
 }

@@ -134,8 +134,14 @@ pub(crate) fn read_volume(
         let mut next = data_pos + add;
         match htype {
             0x73 => {
-                if !crc_ok {
+                // RAR 2.x keeps the archive comment inside the main header,
+                // outside the part its CRC covers.
+                let has_comment = flags & 0x0002 != 0 && raw.len() > 13;
+                if !crc_ok && !(has_comment && crate::crc::crc32(&raw[2..13]) as u16 == crc) {
                     vh.warnings.push("RAR main header checksum mismatch".into());
+                }
+                if has_comment {
+                    vh.old_comment = old_comment(&raw[13..]);
                 }
                 vh.volume = flags & 0x0001 != 0;
                 vh.solid = flags & 0x0008 != 0;
@@ -146,6 +152,10 @@ pub(crate) fn read_volume(
                 }
             }
             0x74 | 0x7a => {
+                let parsed = parse_file(&raw, flags);
+                // RAR 2.x file comments follow the fields the CRC covers.
+                let crc_ok = crc_ok
+                    || flags & 0x0008 != 0 && parsed.as_ref().is_ok_and(|(_, used)| crate::crc::crc32(&raw[2..*used]) as u16 == crc);
                 if !crc_ok {
                     if encrypted && vh.files.is_empty() {
                         return Err(Error::WrongPassword);
@@ -154,8 +164,8 @@ pub(crate) fn read_volume(
                     vh.truncated = true;
                     break;
                 }
-                let mut rec = match parse_file(&raw, flags) {
-                    Ok(r) => r,
+                let mut rec = match parsed {
+                    Ok((r, _)) => r,
                     Err(e) => {
                         vh.warnings.push(format!("{e}; the files after it were not read"));
                         vh.truncated = true;
@@ -178,7 +188,12 @@ pub(crate) fn read_volume(
                 if htype == 0x74 {
                     vh.files.push(rec);
                 } else if rec.name == "CMT" {
-                    vh.comment = Some(rec);
+                    // Before any file it is the archive comment, after one
+                    // it belongs to that file.
+                    match vh.files.last_mut() {
+                        Some(f) => f.comment_rec = Some(Box::new(rec)),
+                        None => vh.comment = Some(rec),
+                    }
                 }
             }
             0x7b => {
@@ -250,7 +265,37 @@ fn read_encrypted(src: &mut dyn ReadSeek, left: u64, pw: &Password, keys: &mut s
     Ok((dec, 8 + total))
 }
 
-fn parse_file(raw: &[u8], flags: u16) -> Result<FileRec> {
+/// A RAR 2.x comment block embedded in a header (stored, or compressed
+/// with the RAR 2.0 or 2.9 method).
+fn old_comment(b: &[u8]) -> Option<String> {
+    if b.len() < 13 || b[2] != 0x75 {
+        return None;
+    }
+    let size = usize::from(u16::from_le_bytes([b[5], b[6]]));
+    let unp = usize::from(u16::from_le_bytes([b[7], b[8]]));
+    let (unp_ver, method) = (b[9], b[10]);
+    let data = b.get(13..size.min(b.len()))?;
+    let bytes = if method == 0x30 {
+        data.get(..unp)?.to_vec()
+    } else {
+        let codec = match unp_ver {
+            20 | 26 => super::unpack::Codec::Rar20,
+            29 => super::unpack::Codec::Rar29,
+            _ => return None,
+        };
+        let mut up = super::unpack::Unpacker::new(codec, 64 << 20);
+        up.begin(false, 1 << 20, Some(unp as u64)).ok()?;
+        let mut out = Vec::new();
+        let src: Box<dyn std::io::Read + Send> = Box::new(std::io::Cursor::new(data.to_vec()));
+        std::io::Read::read_to_end(&mut super::unpack::FileDecoder::new(&mut up, src, Some(unp as u64)), &mut out).ok()?;
+        out
+    };
+    super::comment_text(&bytes)
+}
+
+/// The parsed header and how many of its bytes were fields (the rest can
+/// be an embedded comment).
+fn parse_file(raw: &[u8], flags: u16) -> Result<(FileRec, usize)> {
     let mut b = Bytes::new(&raw[7..], "RAR file header");
     let pack_lo = b.u32()?;
     let unp_lo = b.u32()?;
@@ -323,7 +368,9 @@ fn parse_file(raw: &[u8], flags: u16) -> Result<FileRec> {
         None
     };
     let link = if unix && attr & 0o170000 == 0o120000 { Link::InData } else { Link::None };
-    Ok(FileRec {
+    let used = 7 + b.pos();
+    let comment = if flags & 0x0008 != 0 { old_comment(&raw[used..]) } else { None };
+    let rec = FileRec {
         name,
         dir,
         size: if dir { 0 } else { unp_size },
@@ -340,8 +387,10 @@ fn parse_file(raw: &[u8], flags: u16) -> Result<FileRec> {
         link,
         split_before: flags & 0x0001 != 0,
         split_after: flags & 0x0002 != 0,
+        comment,
         ..Default::default()
-    })
+    };
+    Ok((rec, used))
 }
 
 #[cfg(test)]

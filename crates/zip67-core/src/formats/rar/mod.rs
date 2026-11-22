@@ -29,6 +29,13 @@ pub use reader::RarReader;
 
 use crate::password::Password;
 
+/// Comment bytes as text: up to the first NUL, trimmed; None when empty.
+pub(crate) fn comment_text(bytes: &[u8]) -> Option<String> {
+    let end = bytes.iter().position(|&b| b == 0).unwrap_or(bytes.len());
+    let t = crate::util::decode_name(&bytes[..end]).trim().to_string();
+    (!t.is_empty()).then_some(t)
+}
+
 /// True when `head` starts with a RAR signature (any version).
 pub fn is_rar(head: &[u8]) -> bool {
     head.starts_with(b"Rar!\x1a\x07")
@@ -96,6 +103,10 @@ pub(crate) struct FileRec {
     pub link: Link,
     pub split_before: bool,
     pub split_after: bool,
+    /// Comment stored in the header (RAR 2.x).
+    pub comment: Option<String>,
+    /// The comment sub-header that follows this file (RAR 3.x/4.x).
+    pub comment_rec: Option<Box<FileRec>>,
     /// Older version of a file (archived with WinRAR's `-ver`).
     pub file_version: Option<u64>,
     pub data_offset: u64,
@@ -109,6 +120,8 @@ pub(crate) struct FileRec {
 pub(crate) struct VolumeHeaders {
     pub files: Vec<FileRec>,
     pub comment: Option<FileRec>,
+    /// Archive comment stored in the main header (RAR 2.x).
+    pub old_comment: Option<String>,
     pub volume: bool,
     pub solid: bool,
     pub locked: bool,
