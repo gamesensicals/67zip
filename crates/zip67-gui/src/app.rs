@@ -1288,7 +1288,31 @@ impl App {
 
     // ----- update -------------------------------------------------------------
 
+    /// Handles a message; dialogs with a text field get keyboard focus.
     pub fn update(&mut self, msg: Message) -> Task<Message> {
+        let before = self.modal_kind();
+        let task = self.update_inner(msg);
+        let after = self.modal_kind();
+        if after != before {
+            match after {
+                Some("password") => return Task::batch([task, iced::widget::operation::focus("password")]),
+                Some("input") => return Task::batch([task, iced::widget::operation::focus("modal-input")]),
+                _ => {}
+            }
+        }
+        task
+    }
+
+    fn modal_kind(&self) -> Option<&'static str> {
+        match &self.modal {
+            Some(Modal::Password { .. }) => Some("password"),
+            Some(Modal::Input { .. }) => Some("input"),
+            Some(_) => Some("other"),
+            None => None,
+        }
+    }
+
+    fn update_inner(&mut self, msg: Message) -> Task<Message> {
         if !matches!(msg, Message::Cursor(_) | Message::Tick | Message::WatchTick | Message::Modifiers(_) | Message::Scrolled(_) | Message::ShowMenu) && self.menu.is_some() {
             let keep = matches!(msg, Message::Nothing);
             if !keep {
