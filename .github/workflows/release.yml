@@ -45,7 +45,7 @@ jobs:
         run: ./packaging/appimage/build.sh
 
       - name: Build the .deb
-        run: cargo install cargo-deb --locked && cargo deb --locked -p zip67-gui --no-build
+        run: cargo install cargo-deb --locked && cargo deb -p zip67-gui --no-build
 
       - name: Collect the packages
         run: |
