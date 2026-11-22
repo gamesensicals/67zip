@@ -1202,13 +1202,16 @@ impl App {
                 }
                 std::fs::rename(&p, &to).map_err(|e| e.to_string())?;
                 self.refresh_rows();
+                self.select_path(&to);
             }
             InputAction::NewFolderFs => {
                 if bad_name(&v) {
                     return Err("A name cannot contain '/'.".into());
                 }
-                std::fs::create_dir(self.current_dir().join(&v)).map_err(|e| e.to_string())?;
+                let dir = self.current_dir().join(&v);
+                std::fs::create_dir(&dir).map_err(|e| e.to_string())?;
                 self.refresh_rows();
+                self.select_path(&dir);
             }
             InputAction::RenameInArchive(old) => {
                 if bad_name(&v) {
@@ -1260,6 +1263,15 @@ impl App {
             _ => {}
         }
         Ok(())
+    }
+
+    /// Selects the row showing `path` (after rename / new folder).
+    fn select_path(&mut self, path: &Path) {
+        if let Some(i) = self.rows.iter().position(|r| r.path == path) {
+            self.selected = [i].into_iter().collect();
+            self.anchor = Some(i);
+            self.focus = Some(i);
+        }
     }
 
     fn fs_copy_move(&mut self, paths: Vec<PathBuf>, dest: PathBuf, moving: bool) -> Result<(), String> {
