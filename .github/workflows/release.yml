@@ -83,4 +83,11 @@ jobs:
             echo "Every file is signed with the 67zip release key (minisign, key ID 269FF0C6C87BEF0F, see data/67zip-update.pub):"
             echo '`minisign -Vm <file> -P RWQP73vIxvCfJvPJDeYUb598zfVDB0vMJkxUFcLDvZHUHdQflwNXcLyM`'
           } > release-notes.md
-          gh release create "$GITHUB_REF_NAME" dist/* --title "67zip ${GITHUB_REF_NAME#v}" --notes-file release-notes.md --verify-tag
+          title="67zip ${GITHUB_REF_NAME#v}"
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            # Made on the website ("Draft a new release"): add the files to it.
+            gh release upload "$GITHUB_REF_NAME" dist/* --clobber
+            gh release edit "$GITHUB_REF_NAME" --title "$title" --notes-file release-notes.md
+          else
+            gh release create "$GITHUB_REF_NAME" dist/* --title "$title" --notes-file release-notes.md --verify-tag
+          fi
