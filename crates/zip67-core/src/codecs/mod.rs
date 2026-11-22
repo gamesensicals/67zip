@@ -56,6 +56,11 @@ fn mem_limit_kb(limits: &Limits) -> u32 {
 
 /// Builds a decoder for a whole compressed stream.
 pub fn decoder<'a>(c: Compression, inner: BoxRead<'a>, limits: &Limits) -> Result<BoxRead<'a>> {
+    // Fused: a decoder that failed is never called again.
+    Ok(Box::new(crate::io::Fused::new(decoder_inner(c, inner, limits)?)))
+}
+
+fn decoder_inner<'a>(c: Compression, inner: BoxRead<'a>, limits: &Limits) -> Result<BoxRead<'a>> {
     let buffered = BufReader::with_capacity(128 * 1024, inner);
     Ok(match c {
         Compression::None => Box::new(buffered),

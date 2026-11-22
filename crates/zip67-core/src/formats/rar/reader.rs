@@ -181,6 +181,12 @@ fn has_stream(r: &FileRec) -> bool {
 /// signatures inside a self-extracting program. Returns (offset, RAR5).
 fn locate(src: &mut dyn ReadSeek, size: u64) -> Result<Vec<(u64, bool)>> {
     src.seek(SeekFrom::Start(0))?;
+    let mut sig = [0u8; 8];
+    let n = crate::io::read_full(src, &mut sig)?;
+    if n >= 7 && super::is_rar(&sig) {
+        return Ok(vec![(0, n == 8 && &sig == rar5::SIGNATURE)]);
+    }
+    src.seek(SeekFrom::Start(0))?;
     let mut head = vec![0u8; size.min(4 << 20) as usize];
     let n = crate::io::read_full(src, &mut head)?;
     head.truncate(n);

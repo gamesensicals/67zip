@@ -21,6 +21,9 @@ pub struct Unpacker {
     v3: Option<Unpack3>,
     rar5: bool,
     max_memory: u64,
+    /// A decoding error left the state undefined: nothing more is decoded
+    /// until a fresh (non-solid) start.
+    failed: bool,
 }
 
 /// Dictionary size worth allocating: the declared one, but never more than
@@ -35,12 +38,16 @@ pub fn window_size(dict: u64, stream_bytes: Option<u64>) -> u64 {
 
 impl Unpacker {
     pub fn new(rar5: bool, max_memory: u64) -> Self {
-        Unpacker { win: None, v5: None, v3: None, rar5, max_memory }
+        Unpacker { win: None, v5: None, v3: None, rar5, max_memory, failed: false }
     }
 
     /// Prepares for the next file. `solid` continues the previous file's
     /// stream; `window` is the dictionary size it needs.
     pub fn begin(&mut self, solid: bool, window: u64) -> Result<()> {
+        if solid && self.failed {
+            return Err(Error::corrupt("RAR data: an earlier file of this solid archive is damaged"));
+        }
+        self.failed = false;
         if window > self.max_memory {
             return Err(Error::limit(format!("the RAR dictionary ({} MiB) is larger than the memory limit", window >> 20)));
         }
@@ -67,6 +74,17 @@ impl Unpacker {
     }
 
     fn step(&mut self, inp: &mut Input) -> Result<()> {
+        if self.failed {
+            return Err(Error::corrupt("RAR data is damaged"));
+        }
+        let res = self.step_inner(inp);
+        if res.is_err() {
+            self.failed = true;
+        }
+        res
+    }
+
+    fn step_inner(&mut self, inp: &mut Input) -> Result<()> {
         let win = self.win.as_mut().ok_or_else(|| Error::corrupt("RAR decoder not started"))?;
         if self.rar5 {
             self.v5.as_mut().ok_or_else(|| Error::corrupt("RAR decoder not started"))?.decode(inp, win, BUDGET)

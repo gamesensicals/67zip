@@ -133,6 +133,35 @@ impl<R: Read> Read for CrcCheck<R> {
     }
 }
 
+/// Stays failed after the first error: decoders must not be called again
+/// once they reported damage (their state is undefined then), even when a
+/// caller drains the rest of a stream.
+pub struct Fused<R> {
+    inner: R,
+    failed: Option<(io::ErrorKind, String)>,
+}
+
+impl<R: Read> Fused<R> {
+    pub fn new(inner: R) -> Self {
+        Fused { inner, failed: None }
+    }
+}
+
+impl<R: Read> Read for Fused<R> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        if let Some((kind, msg)) = &self.failed {
+            return Err(io::Error::new(*kind, msg.clone()));
+        }
+        match self.inner.read(buf) {
+            Err(e) if e.kind() != io::ErrorKind::Interrupted => {
+                self.failed = Some((e.kind(), e.to_string()));
+                Err(e)
+            }
+            r => r,
+        }
+    }
+}
+
 /// Counts bytes into a [`Progress`] and honours cancel/pause.
 pub struct Progressed<'p, R> {
     inner: R,

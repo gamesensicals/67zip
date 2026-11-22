@@ -321,7 +321,7 @@ impl ArchiveReader for SevenZReader {
                 keys: &self.keys,
             };
             let mut stream = match folder_reader(folder, &ctx) {
-                Ok(s) => s,
+                Ok(s) => crate::io::Fused::new(s),
                 Err(e) => {
                     let e = wrong_password_if_encrypted(e, encrypted);
                     for &(_, i) in &members {
