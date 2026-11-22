@@ -74,6 +74,8 @@ pub struct OpenArchive {
     /// Folder on disk that holds the outermost archive.
     pub host_dir: PathBuf,
     pub nested: bool,
+    /// For a nested archive: the folder inside its parent archive.
+    pub inner_dir: String,
 }
 
 #[derive(Debug)]
@@ -84,7 +86,9 @@ pub enum Location {
 
 #[derive(Clone, Debug)]
 pub enum Purpose {
-    Open { file: PathBuf, display: String, host_dir: PathBuf, nested: bool, folder: String, password: Option<String> },
+    Open { file: PathBuf, display: String, host_dir: PathBuf, nested: bool, folder: String, password: Option<String>, inner_dir: String },
+    /// Re-read an archive that is already open, keeping the view.
+    Refresh { file: PathBuf },
     Extract { dest: PathBuf, then: After },
     Test,
     Changed { archive: PathBuf, folder: String },
@@ -473,7 +477,7 @@ impl App {
         }
         match WorkerHandle::spawn(&self.exe, &request) {
             Ok(handle) => {
-                let quiet = matches!(purpose, Purpose::Open { .. });
+                let quiet = matches!(purpose, Purpose::Open { .. } | Purpose::Refresh { .. });
                 self.job = Some(Job {
                     handle,
                     request,
@@ -494,7 +498,7 @@ impl App {
         let mut finished = None;
         if let Some(job) = self.job.as_mut() {
             // A short Open job only shows its dialog if it takes a while.
-            if matches!(job.purpose, Purpose::Open { .. }) && job.started.elapsed() > Duration::from_millis(600) {
+            if matches!(job.purpose, Purpose::Open { .. } | Purpose::Refresh { .. }) && job.started.elapsed() > Duration::from_millis(600) {
                 job.background = false;
             }
             for _ in 0..200 {
@@ -579,17 +583,35 @@ impl App {
 
     fn handle_reply(&mut self, job: Job, reply: Reply, had_password: bool) -> Task<Message> {
         match (job.purpose.clone(), reply) {
-            (Purpose::Open { file, display, host_dir, nested, folder, password }, Reply::Listing { archive_type, entries, info }) => {
+            (Purpose::Refresh { file }, Reply::Listing { archive_type, entries, info }) => {
+                if let Location::Archive { stack, folder } = &mut self.location {
+                    let top = stack.last().is_some_and(|a| a.file == file);
+                    if let Some(a) = stack.iter_mut().find(|a| a.file == file) {
+                        a.tree = Tree::build(&entries);
+                        a.entries = entries;
+                        a.info = info;
+                        a.archive_type = archive_type;
+                        // If the folder on screen is gone (renamed, deleted),
+                        // show the nearest one that still exists.
+                        while top && !folder.is_empty() && !a.tree.has_dir(folder) {
+                            *folder = folder.rsplit_once('/').map(|(p, _)| p.to_string()).unwrap_or_default();
+                        }
+                    }
+                }
+                self.refresh_rows();
+                Task::none()
+            }
+            (Purpose::Open { file, display, host_dir, nested, folder, password, inner_dir }, Reply::Listing { archive_type, entries, info }) => {
                 let pw = password.or_else(|| match &job.request {
                     Request::List { password, .. } => password.clone(),
                     _ => None,
                 });
                 let tree = Tree::build(&entries);
-                let arch = OpenArchive { file, display, archive_type, entries, info, tree, password: pw, host_dir, nested };
+                let arch = OpenArchive { file, display, archive_type, entries, info, tree, password: pw, host_dir, nested, inner_dir };
                 let folder = if arch.tree.has_dir(&folder) { folder } else { String::new() };
                 match &mut self.location {
                     Location::Archive { stack, folder: f } if nested || stack.last().is_some_and(|a| a.file == arch.file) => {
-                        if !nested {
+                        if stack.last().is_some_and(|a| a.file == arch.file) {
                             stack.pop();
                         }
                         stack.push(arch);
@@ -639,7 +661,7 @@ impl App {
                         } else if zip67_core::ArchiveType::from_file_name(&file_name(&path)).is_some() {
                             // An archive inside the archive: browse it too (read-only).
                             let req = Request::List { archive: path.clone(), password: None };
-                            let purpose = Purpose::Open { file: path, display: nested_display, host_dir, nested: true, folder: String::new(), password: None };
+                            let purpose = Purpose::Open { file: path, display: nested_display, host_dir, nested: true, folder: String::new(), password: None, inner_dir: folder };
                             self.start_job(req, purpose, "Opening".into());
                         } else if let Err(e) = platform::open_with_default(&path) {
                             self.toast(e.to_string(), true);
@@ -679,13 +701,37 @@ impl App {
                     let what = rep.outputs.first().map(|p| file_name(p)).unwrap_or_default();
                     self.toast(format!("Saved {what} ({})", zip67_core::util::human_size(rep.bytes_out)), false);
                 }
-                // Re-read the archive if it is the one on screen.
-                let reopen = self.current_archive().filter(|a| a.file == archive && !a.nested).map(|a| (a.display.clone(), a.host_dir.clone(), a.password.clone()));
-                if let Some((display, host_dir, password)) = reopen {
-                    let req = Request::List { archive: archive.clone(), password: password.clone() };
-                    self.start_job(req, Purpose::Open { file: archive, display, host_dir, nested: false, folder, password }, "Opening".into());
-                } else {
-                    self.refresh_after_change();
+                let _ = folder;
+                // Re-read the archive if it is open, and if it lives inside
+                // another archive, put the new version back into that one
+                // (which in turn updates its own parent, and so on).
+                let found = match &self.location {
+                    Location::Archive { stack, .. } => stack.iter().position(|a| a.file == archive).map(|k| {
+                        let me = &stack[k];
+                        let parent = k.checked_sub(1).map(|p| &stack[p]);
+                        (
+                            me.password.clone(),
+                            parent.map(|p| (p.file.clone(), p.password.clone(), p.display.clone(), me.file.clone(), me.inner_dir.clone())),
+                        )
+                    }),
+                    _ => None,
+                };
+                match found {
+                    Some((password, parent)) => {
+                        self.start_job(Request::List { archive: archive.clone(), password }, Purpose::Refresh { file: archive }, "Reading".into());
+                        if let Some((pfile, ppw, pdisplay, me, inner_dir)) = parent {
+                            let req = Request::Update {
+                                archive: pfile.clone(),
+                                password: ppw,
+                                changes: ChangesSpec { add: vec![(me, inner_dir.clone())], ..Default::default() },
+                                level: None,
+                                threads: 0,
+                            };
+                            let title = format!("Saving into {}", file_name(Path::new(&pdisplay)));
+                            self.start_job(req, Purpose::Changed { archive: pfile, folder: inner_dir }, title);
+                        }
+                    }
+                    None => self.refresh_after_change(),
                 }
                 Task::none()
             }
@@ -714,7 +760,7 @@ impl App {
         // Parts of a split archive are shown under the archive's own name.
         let display = host_dir.join(zip67_core::source::logical_name(p)).to_string_lossy().into_owned();
         let req = Request::List { archive: p.to_path_buf(), password: password.clone() };
-        self.start_job(req, Purpose::Open { file: p.to_path_buf(), display, host_dir, nested: false, folder: String::new(), password }, "Opening".into());
+        self.start_job(req, Purpose::Open { file: p.to_path_buf(), display, host_dir, nested: false, folder: String::new(), password, inner_dir: String::new() }, "Opening".into());
     }
 
     fn open_row(&mut self, i: usize, force_inside: bool, force_outside: bool) -> Task<Message> {
@@ -963,17 +1009,17 @@ impl App {
     }
 
     fn can_modify(&mut self) -> bool {
-        match self.current_archive() {
-            Some(a) if a.nested => {
-                self.toast("Archives inside archives are read-only. Extract it first to change it.", true);
-                false
-            }
-            Some(a) if !zip67_core::ArchiveType::from_id(&a.archive_type).is_some_and(|t| t.can_update()) || a.info.volumes > 1 => {
-                self.toast("This kind of archive cannot be changed.", true);
-                false
-            }
-            _ => true,
+        let Location::Archive { stack, .. } = &self.location else { return true };
+        // Every archive from the file on disk down to the one on screen
+        // gets rewritten, so all of them must be changeable.
+        let blocked = stack.iter().find(|a| !zip67_core::ArchiveType::from_id(&a.archive_type).is_some_and(|t| t.can_update()) || a.info.volumes > 1);
+        if let Some(a) = blocked {
+            let why = if a.info.volumes > 1 { "split archives cannot be changed" } else { "this kind of archive cannot be changed" };
+            let name = file_name(Path::new(&a.display));
+            self.toast(format!("{}: {why}.", zip67_core::util::safe_display(&name)), true);
+            return false;
         }
+        true
     }
 
     fn context_menu(&mut self) {

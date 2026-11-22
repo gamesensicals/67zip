@@ -356,7 +356,7 @@ impl App {
                         parts.push(format!("{} parts", a.info.volumes));
                     }
                     if a.nested {
-                        parts.push("read-only".into());
+                        parts.push("inside another archive".into());
                     }
                     parts.join(" · ")
                 })

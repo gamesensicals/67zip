@@ -60,7 +60,9 @@ Wayland) and working OpenGL or Vulkan drivers, as any desktop provides.
 ![Add to archive dialog in dark mode](docs/screenshots/add-dark.png)
 
 - **Moving around:** double-click a folder or archive to open it. Backspace
-  goes up a level. An archive opens like a folder. Opening a file inside it
+  goes up a level. An archive opens like a folder, and so does an archive
+  inside an archive. Changes to an inner archive are saved back into the
+  outer one. Opening a file inside it
   starts your usual app for that file. If you change and save the file,
   67zip offers to put the new version back into the archive.
 - **Toolbar:** Add, Extract, Test, Copy, Move, Delete, Info, New folder,

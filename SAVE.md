@@ -121,8 +121,10 @@ multi-core safe bzip2 decoder.
 ## Next
 
 Ask the user to approve moving the work to `gamesensicals/67zip`.
-Possible polish: nested archive write-back (now read-only), AppImage script,
-drag files *out* of the window (iced does not support it yet).
+Done at the 03:40 continuation: nested archive write-back (changes inside
+an archive-in-an-archive are written back level by level; verified with
+outer.zip/inner.7z). Possible polish: AppImage script, drag files *out* of
+the window (iced does not support it yet), RAR reading (offered, not asked).
 
 ## How to resume
 
