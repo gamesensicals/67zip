@@ -5362,7 +5362,7 @@ checksum = "85ccff8a4805aba1eaa4cd4afcd49f7557dd2cf5fd79ffc37f8959466effc5aa"
 
 [[package]]
 name = "zip67-cli"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "ctrlc",
  "rustix 1.1.6",
@@ -5373,7 +5373,7 @@ dependencies = [
 
 [[package]]
 name = "zip67-core"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "aes",
  "blake3",
@@ -5400,7 +5400,7 @@ dependencies = [
 
 [[package]]
 name = "zip67-gui"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "iced",
  "jiff",
@@ -5415,7 +5415,7 @@ dependencies = [
 
 [[package]]
 name = "zip67-worker"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "landlock",
  "libc",
