@@ -5,8 +5,8 @@ use std::collections::HashMap;
 use std::io::{Read, Seek, SeekFrom};
 use std::sync::{Arc, Mutex};
 
-use super::coders::{DecodeCtx, SharedSrc, folder_methods, folder_reader};
-use super::header::{Header, SIGNATURE, StreamsInfo, read_encoded_header_info, read_header};
+use super::coders::{folder_methods, folder_reader, DecodeCtx, SharedSrc};
+use super::header::{read_encoded_header_info, read_header, Header, StreamsInfo, SIGNATURE};
 use crate::archive::{ArchiveInfo, ArchiveReader, EntryVisitor, OpenOptions};
 use crate::detect::ArchiveType;
 use crate::entry::{Entry, EntryKind};
@@ -35,19 +35,13 @@ pub struct SevenZReader {
 }
 
 fn pack_offsets(s: &StreamsInfo, size: u64) -> Result<Vec<u64>> {
-    let mut off = 32u64
-        .checked_add(s.pack_pos)
-        .ok_or_else(|| Error::corrupt("7z pack position"))?;
+    let mut off = 32u64.checked_add(s.pack_pos).ok_or_else(|| Error::corrupt("7z pack position"))?;
     let mut v = Vec::with_capacity(s.pack_sizes.len());
     for &p in &s.pack_sizes {
         v.push(off);
-        off = off
-            .checked_add(p)
-            .ok_or_else(|| Error::corrupt("7z pack sizes"))?;
+        off = off.checked_add(p).ok_or_else(|| Error::corrupt("7z pack sizes"))?;
         if off > size {
-            return Err(Error::corrupt(
-                "7z data runs past the end of the file (incomplete download?)",
-            ));
+            return Err(Error::corrupt("7z data runs past the end of the file (incomplete download?)"));
         }
     }
     Ok(v)
@@ -71,10 +65,7 @@ impl SevenZReader {
             return Err(Error::UnsupportedFormat);
         }
         if sig[6] != 0 {
-            return Err(Error::unsupported(format!(
-                "7z format version {}.{}",
-                sig[6], sig[7]
-            )));
+            return Err(Error::unsupported(format!("7z format version {}.{}", sig[6], sig[7])));
         }
         let start_crc = u32::from_le_bytes(sig[8..12].try_into().unwrap_or([0; 4]));
         if crate::crc::crc32(&sig[12..32]) != start_crc {
@@ -83,21 +74,11 @@ impl SevenZReader {
         let next_off = u64::from_le_bytes(sig[12..20].try_into().unwrap_or([0; 8]));
         let next_size = u64::from_le_bytes(sig[20..28].try_into().unwrap_or([0; 8]));
         let next_crc = u32::from_le_bytes(sig[28..32].try_into().unwrap_or([0; 4]));
-        let threads = if opts.threads == 0 {
-            crate::util::default_threads()
-        } else {
-            opts.threads
-        };
+        let threads = if opts.threads == 0 { crate::util::default_threads() } else { opts.threads };
         let shared: SharedSrc = Arc::new(Mutex::new(src));
         let keys: Keys = Mutex::new(HashMap::new());
 
-        let mut info = ArchiveInfo {
-            format: "7z".into(),
-            physical_size: size,
-            volumes: 1,
-            headers_size: Some(next_size),
-            ..Default::default()
-        };
+        let mut info = ArchiveInfo { format: "7z".into(), physical_size: size, volumes: 1, headers_size: Some(next_size), ..Default::default() };
         if next_size == 0 {
             return Ok(SevenZReader {
                 src: shared,
@@ -113,15 +94,9 @@ impl SevenZReader {
                 info,
             });
         }
-        let hpos = 32u64
-            .checked_add(next_off)
-            .ok_or_else(|| Error::corrupt("7z header offset"))?;
-        if next_size > limits.max_header_size
-            || hpos.checked_add(next_size).is_none_or(|e| e > size)
-        {
-            return Err(Error::corrupt(
-                "7z header lies outside the file (incomplete download?)",
-            ));
+        let hpos = 32u64.checked_add(next_off).ok_or_else(|| Error::corrupt("7z header offset"))?;
+        if next_size > limits.max_header_size || hpos.checked_add(next_size).is_none_or(|e| e > size) {
+            return Err(Error::corrupt("7z header lies outside the file (incomplete download?)"));
         }
         let mut data = vec![0u8; next_size as usize];
         {
@@ -142,10 +117,7 @@ impl SevenZReader {
                 }
                 Some(&super::header::id::ENCODED_HEADER) => {
                     let si = read_encoded_header_info(&data)?;
-                    let folder = si
-                        .folders
-                        .first()
-                        .ok_or_else(|| Error::corrupt("7z encoded header without data"))?;
+                    let folder = si.folders.first().ok_or_else(|| Error::corrupt("7z encoded header without data"))?;
                     let encrypted = folder.is_encrypted();
                     if encrypted {
                         info.encrypted_headers = true;
@@ -179,10 +151,7 @@ impl SevenZReader {
                         Ok(out)
                     })()
                     .map_err(|e| wrong_password_if_encrypted(e, encrypted))?;
-                    if encrypted
-                        && decoded.first() != Some(&super::header::id::HEADER)
-                        && decoded.first() != Some(&super::header::id::ENCODED_HEADER)
-                    {
+                    if encrypted && decoded.first() != Some(&super::header::id::HEADER) && decoded.first() != Some(&super::header::id::ENCODED_HEADER) {
                         return Err(Error::WrongPassword);
                     }
                     data = decoded;
@@ -209,15 +178,7 @@ impl SevenZReader {
         let mut entries = Vec::with_capacity(header.files.len());
         let mut places = Vec::with_capacity(header.files.len());
         for rec in &header.files {
-            let place = if rec.has_stream {
-                Some(
-                    slot_iter
-                        .next()
-                        .ok_or_else(|| Error::corrupt("7z: more files than data streams"))?,
-                )
-            } else {
-                None
-            };
+            let place = if rec.has_stream { Some(slot_iter.next().ok_or_else(|| Error::corrupt("7z: more files than data streams"))?) } else { None };
             if rec.is_anti {
                 continue;
             }
@@ -246,41 +207,16 @@ impl SevenZReader {
                 e.mtime = Some(s);
                 e.mtime_nanos = n;
             }
-            e.mode = unix.map(|m| m & 0o7777).or_else(|| {
-                rec.attrib.map(|a| {
-                    if a & 1 != 0 {
-                        0o444
-                    } else if kind == EntryKind::Dir {
-                        0o755
-                    } else {
-                        0o644
-                    }
-                })
-            });
+            e.mode = unix.map(|m| m & 0o7777).or_else(|| rec.attrib.map(|a| if a & 1 != 0 { 0o444 } else if kind == EntryKind::Dir { 0o755 } else { 0o644 }));
             if let Some((fi, si)) = place {
                 let f = &streams.folders[fi];
                 e.size = streams.sub_sizes[fi][si];
-                e.crc32 = streams
-                    .sub_crcs
-                    .get(fi)
-                    .and_then(|v| v.get(si))
-                    .copied()
-                    .flatten();
+                e.crc32 = streams.sub_crcs.get(fi).and_then(|v| v.get(si)).copied().flatten();
                 e.encrypted = f.is_encrypted();
                 e.method = Some(folder_methods(f));
                 e.block = Some(fi as u32);
                 if f.num_substreams == 1 {
-                    e.packed_size = Some(
-                        (0..f.packed.len())
-                            .map(|k| {
-                                streams
-                                    .pack_sizes
-                                    .get(f.first_pack + k)
-                                    .copied()
-                                    .unwrap_or(0)
-                            })
-                            .sum(),
-                    );
+                    e.packed_size = Some((0..f.packed.len()).map(|k| streams.pack_sizes.get(f.first_pack + k).copied().unwrap_or(0)).sum());
                 }
             }
             entries.push(e);
@@ -322,12 +258,7 @@ impl ArchiveReader for SevenZReader {
         self.info.clone()
     }
 
-    fn extract(
-        &mut self,
-        selected: &dyn Fn(&Entry) -> bool,
-        visitor: &mut dyn EntryVisitor,
-        progress: &Progress,
-    ) -> Result<()> {
+    fn extract(&mut self, selected: &dyn Fn(&Entry) -> bool, visitor: &mut dyn EntryVisitor, progress: &Progress) -> Result<()> {
         let _ = self.size;
         // Entries without data first (folders, empty files).
         for (i, e) in self.entries.iter().enumerate() {
@@ -367,10 +298,7 @@ impl ArchiveReader for SevenZReader {
             if folder.unpack_size() > self.limits.max_total_size {
                 for &(_, i) in &members {
                     if selected(&self.entries[i]) {
-                        visitor.entry_error(
-                            &self.entries[i],
-                            Error::limit("block is larger than the size limit"),
-                        )?;
+                        visitor.entry_error(&self.entries[i], Error::limit("block is larger than the size limit"))?;
                     }
                 }
                 continue;
@@ -426,10 +354,7 @@ impl ArchiveReader for SevenZReader {
                 }
                 if broken.is_some() {
                     if selected(entry) {
-                        visitor.entry_error(
-                            entry,
-                            clone_err(broken.as_ref().unwrap_or(&Error::Cancelled)),
-                        )?;
+                        visitor.entry_error(entry, clone_err(broken.as_ref().unwrap_or(&Error::Cancelled)))?;
                     }
                     continue;
                 }
@@ -438,17 +363,13 @@ impl ArchiveReader for SevenZReader {
                 let part = TakeExact::new(&mut stream, size);
                 let mut checked = CrcCheck::new(part, entry.crc32, &entry.path);
                 let res: Result<()> = if !selected(entry) {
-                    crate::io::drain(&mut checked)
-                        .map(|_| ())
-                        .map_err(Error::from)
+                    crate::io::drain(&mut checked).map(|_| ()).map_err(Error::from)
                 } else {
                     progress.set_current(&entry.path);
                     let r = if entry.kind == EntryKind::Symlink {
                         let mut t = Vec::new();
                         match (&mut checked).take(4097).read_to_end(&mut t) {
-                            Ok(_) if t.len() > 4096 => {
-                                Err(Error::corrupt("symlink target too long"))
-                            }
+                            Ok(_) if t.len() > 4096 => Err(Error::corrupt("symlink target too long")),
                             Ok(_) => visitor.symlink(entry, &String::from_utf8_lossy(&t)),
                             Err(e) => Err(e.into()),
                         }
@@ -457,9 +378,7 @@ impl ArchiveReader for SevenZReader {
                         visitor.file(entry, &mut p)
                     };
                     // Keep the solid stream aligned whatever the visitor did.
-                    let drained = crate::io::drain(&mut checked)
-                        .map(|_| ())
-                        .map_err(Error::from);
+                    let drained = crate::io::drain(&mut checked).map(|_| ()).map_err(Error::from);
                     r.and(drained)
                 };
                 match res {
@@ -475,9 +394,7 @@ impl ArchiveReader for SevenZReader {
                             visitor.entry_error(entry, e)?;
                         }
                     }
-                    Err(e @ (Error::UnsafePath(_) | Error::InvalidInput(_))) => {
-                        visitor.entry_error(entry, e)?
-                    }
+                    Err(e @ (Error::UnsafePath(_) | Error::InvalidInput(_))) => visitor.entry_error(entry, e)?,
                     Err(e @ Error::LimitExceeded(_)) => return Err(e),
                     Err(e) => {
                         // Decoder failure: the rest of this folder is lost.

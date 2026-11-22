@@ -6,8 +6,8 @@ use std::fs;
 use std::io::Write;
 
 use common::*;
-use zip67_core::extract::{ExtractOptions, Overwrite, Selection, extract_to};
-use zip67_core::{OpenOptions, Progress, open};
+use zip67_core::extract::{extract_to, ExtractOptions, Overwrite, Selection};
+use zip67_core::{open, OpenOptions, Progress};
 
 /// Builds a zip with stored entries; `dup_offset` makes the second central
 /// record point at the first local header (overlap bomb).
@@ -35,11 +35,7 @@ fn crafted_zip(entries: &[(&str, &[u8], u32)], dup_offset: bool) -> Vec<u8> {
         lh.extend_from_slice(name.as_bytes());
         out.extend_from_slice(&lh);
         out.extend_from_slice(data);
-        let off = if dup_offset && i > 0 {
-            first_offset
-        } else {
-            offset
-        };
+        let off = if dup_offset && i > 0 { first_offset } else { offset };
         cd.extend_from_slice(&0x02014b50u32.to_le_bytes());
         cd.extend_from_slice(&((3u16 << 8) | 20).to_le_bytes());
         cd.extend_from_slice(&10u16.to_le_bytes());
@@ -67,41 +63,17 @@ fn crafted_zip(entries: &[(&str, &[u8], u32)], dup_offset: bool) -> Vec<u8> {
     out
 }
 
-fn extract(
-    archive: &std::path::Path,
-    dest: &std::path::Path,
-) -> zip67_core::Result<zip67_core::extract::ExtractReport> {
+fn extract(archive: &std::path::Path, dest: &std::path::Path) -> zip67_core::Result<zip67_core::extract::ExtractReport> {
     let mut r = open(archive, &OpenOptions::default())?;
-    let eo = ExtractOptions {
-        overwrite: Overwrite::Always,
-        ..Default::default()
-    };
-    extract_to(
-        r.as_mut(),
-        dest,
-        &Selection::All,
-        &eo,
-        None,
-        &Progress::new(),
-    )
+    let eo = ExtractOptions { overwrite: Overwrite::Always, ..Default::default() };
+    extract_to(r.as_mut(), dest, &Selection::All, &eo, None, &Progress::new())
 }
 
 #[test]
 fn zip_slip_is_blocked() {
     let tmp = tempfile::tempdir().unwrap();
     let z = tmp.path().join("evil.zip");
-    fs::write(
-        &z,
-        crafted_zip(
-            &[
-                ("../escaped.txt", b"pwned", 0o100644),
-                ("/abs.txt", b"pwned", 0o100644),
-                ("ok.txt", b"fine", 0o100644),
-            ],
-            false,
-        ),
-    )
-    .unwrap();
+    fs::write(&z, crafted_zip(&[("../escaped.txt", b"pwned", 0o100644), ("/abs.txt", b"pwned", 0o100644), ("ok.txt", b"fine", 0o100644)], false)).unwrap();
     let dest = tmp.path().join("dest");
     let rep = extract(&z, &dest).unwrap();
     assert!(!tmp.path().join("escaped.txt").exists());
@@ -120,15 +92,7 @@ fn symlink_escape_is_blocked() {
     let z = tmp.path().join("evil2.zip");
     fs::write(
         &z,
-        crafted_zip(
-            &[
-                ("link", target.as_bytes(), 0o120777),
-                ("up", b"..", 0o120777),
-                ("link/pwned.txt", b"x", 0o100644),
-                ("up/pwned2.txt", b"x", 0o100644),
-            ],
-            false,
-        ),
+        crafted_zip(&[("link", target.as_bytes(), 0o120777), ("up", b"..", 0o120777), ("link/pwned.txt", b"x", 0o100644), ("up/pwned2.txt", b"x", 0o100644)], false),
     )
     .unwrap();
     let dest = tmp.path().join("dest");
@@ -139,10 +103,7 @@ fn symlink_escape_is_blocked() {
         // The later file entry may create a plain folder of that name; it
         // must never be a symlink.
         let md = fs::symlink_metadata(dest.join(l));
-        assert!(
-            md.map(|m| !m.file_type().is_symlink()).unwrap_or(true),
-            "{l} must not be a symlink"
-        );
+        assert!(md.map(|m| !m.file_type().is_symlink()).unwrap_or(true), "{l} must not be a symlink");
     }
 }
 
@@ -150,17 +111,7 @@ fn symlink_escape_is_blocked() {
 fn overlapping_entries_bomb_is_refused() {
     let tmp = tempfile::tempdir().unwrap();
     let z = tmp.path().join("bomb.zip");
-    fs::write(
-        &z,
-        crafted_zip(
-            &[
-                ("a", b"0000000000", 0o100644),
-                ("b", b"0000000000", 0o100644),
-            ],
-            true,
-        ),
-    )
-    .unwrap();
+    fs::write(&z, crafted_zip(&[("a", b"0000000000", 0o100644), ("b", b"0000000000", 0o100644)], true)).unwrap();
     assert!(open(&z, &OpenOptions::default()).is_err());
 }
 
@@ -244,11 +195,7 @@ fn archive_permissions_respect_the_umask() {
     fs::write(&p, zip).unwrap();
     let dest = tmp.path().join("out");
     extract(&p, &dest).unwrap();
-    let mode = fs::metadata(dest.join("open.sh"))
-        .unwrap()
-        .permissions()
-        .mode()
-        & 0o7777;
+    let mode = fs::metadata(dest.join("open.sh")).unwrap().permissions().mode() & 0o7777;
     let umask = {
         let old = rustix::process::umask(rustix::fs::Mode::from_raw_mode(0o022));
         rustix::process::umask(old);

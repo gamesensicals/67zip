@@ -46,9 +46,7 @@ pub fn lzma2_dict_from_prop(b: u8) -> Result<u32> {
 }
 
 pub fn lzma2_prop_from_dict(dict: u32) -> u8 {
-    (0..40u8)
-        .find(|&b| lzma2_dict_from_prop(b).unwrap_or(0) >= dict)
-        .unwrap_or(40)
+    (0..40u8).find(|&b| lzma2_dict_from_prop(b).unwrap_or(0) >= dict).unwrap_or(40)
 }
 
 fn log2_name(v: u64) -> String {
@@ -90,10 +88,7 @@ pub fn method_name(id: &[u8], props: &[u8]) -> String {
         ID_SPARC => "SPARC".into(),
         ID_ARM64 => "ARM64".into(),
         ID_RISCV => "RISCV".into(),
-        ID_DELTA => format!(
-            "Delta:{}",
-            props.first().map(|&b| u32::from(b) + 1).unwrap_or(1)
-        ),
+        ID_DELTA => format!("Delta:{}", props.first().map(|&b| u32::from(b) + 1).unwrap_or(1)),
         ID_DEFLATE => "Deflate".into(),
         ID_DEFLATE64 => "Deflate64".into(),
         ID_BZIP2 => "BZip2".into(),
@@ -105,11 +100,7 @@ pub fn method_name(id: &[u8], props: &[u8]) -> String {
 
 /// Human readable description of a folder's coders, outermost first.
 pub fn folder_methods(f: &Folder) -> String {
-    f.coders
-        .iter()
-        .map(|c| method_name(&c.id, &c.props))
-        .collect::<Vec<_>>()
-        .join(" ")
+    f.coders.iter().map(|c| method_name(&c.id, &c.props)).collect::<Vec<_>>().join(" ")
 }
 
 // ----- 7zAES ---------------------------------------------------------------
@@ -121,21 +112,13 @@ pub struct AesParams {
 }
 
 pub fn parse_aes_props(p: &[u8]) -> Result<AesParams> {
-    let b0 = *p
-        .first()
-        .ok_or_else(|| Error::corrupt("7zAES properties missing"))?;
+    let b0 = *p.first().ok_or_else(|| Error::corrupt("7zAES properties missing"))?;
     let cycles = b0 & 0x3f;
     let mut iv = [0u8; 16];
     if b0 & 0xc0 == 0 {
-        return Ok(AesParams {
-            cycles,
-            salt: Vec::new(),
-            iv,
-        });
+        return Ok(AesParams { cycles, salt: Vec::new(), iv });
     }
-    let b1 = *p
-        .get(1)
-        .ok_or_else(|| Error::corrupt("7zAES properties truncated"))?;
+    let b1 = *p.get(1).ok_or_else(|| Error::corrupt("7zAES properties truncated"))?;
     let salt_len = usize::from((b0 >> 7) & 1) + usize::from(b1 >> 4);
     let iv_len = usize::from((b0 >> 6) & 1) + usize::from(b1 & 0x0f);
     if p.len() < 2 + salt_len + iv_len || iv_len > 16 {
@@ -167,9 +150,7 @@ pub fn derive_key(password: &Password, salt: &[u8], cycles: u8) -> Result<Zeroiz
         return Ok(key);
     }
     if cycles > 24 {
-        return Err(Error::unsupported(
-            "7zAES key derivation with more than 2^24 rounds",
-        ));
+        return Err(Error::unsupported("7zAES key derivation with more than 2^24 rounds"));
     }
     let mut sha = Sha256::new();
     let mut block = Zeroizing::new(Vec::with_capacity(salt.len() + pw.len() + 8));
@@ -199,11 +180,7 @@ pub struct RangeReader {
 
 impl RangeReader {
     pub fn new(src: SharedSrc, start: u64, len: u64) -> Self {
-        RangeReader {
-            src,
-            pos: start,
-            end: start.saturating_add(len),
-        }
+        RangeReader { src, pos: start, end: start.saturating_add(len) }
     }
 }
 
@@ -212,13 +189,8 @@ impl Read for RangeReader {
         if self.pos >= self.end || buf.is_empty() {
             return Ok(0);
         }
-        let n = buf
-            .len()
-            .min((self.end - self.pos).min(usize::MAX as u64) as usize);
-        let mut src = self
-            .src
-            .lock()
-            .map_err(|_| io::Error::other("source lock poisoned"))?;
+        let n = buf.len().min((self.end - self.pos).min(usize::MAX as u64) as usize);
+        let mut src = self.src.lock().map_err(|_| io::Error::other("source lock poisoned"))?;
         src.seek(SeekFrom::Start(self.pos))?;
         let got = src.read(&mut buf[..n])?;
         if got == 0 {
@@ -246,19 +218,14 @@ pub struct DecodeCtx<'a> {
 
 fn check_mem(limits: &Limits, bytes: u64, what: &str) -> Result<()> {
     if bytes > limits.max_decoder_memory {
-        return Err(Error::limit(format!(
-            "{what} needs {} of memory",
-            crate::util::human_size(bytes)
-        )));
+        return Err(Error::limit(format!("{what} needs {} of memory", crate::util::human_size(bytes))));
     }
     Ok(())
 }
 
 /// A reader producing the folder's main (unpacked) stream.
 pub fn folder_reader(folder: &Folder, ctx: &DecodeCtx) -> Result<BoxR> {
-    let out = folder
-        .main_out()
-        .ok_or_else(|| Error::corrupt("7z folder has no main output"))?;
+    let out = folder.main_out().ok_or_else(|| Error::corrupt("7z folder has no main output"))?;
     out_reader(folder, out, ctx, 0)
 }
 
@@ -266,9 +233,7 @@ fn out_reader(folder: &Folder, out: usize, ctx: &DecodeCtx, depth: usize) -> Res
     if depth > 16 {
         return Err(Error::corrupt("7z coder graph too deep"));
     }
-    let (ci, in_base, _) = folder
-        .coder_of_out(out)
-        .ok_or_else(|| Error::corrupt("7z coder graph"))?;
+    let (ci, in_base, _) = folder.coder_of_out(out).ok_or_else(|| Error::corrupt("7z coder graph"))?;
     let coder = &folder.coders[ci];
     let mut inputs: Vec<BoxR> = Vec::with_capacity(coder.num_in);
     for j in 0..coder.num_in {
@@ -276,28 +241,17 @@ fn out_reader(folder: &Folder, out: usize, ctx: &DecodeCtx, depth: usize) -> Res
         if let Some(&(_, bound_out)) = folder.bind_pairs.iter().find(|&&(i, _)| i == in_idx) {
             inputs.push(out_reader(folder, bound_out, ctx, depth + 1)?);
         } else {
-            let k = folder
-                .packed
-                .iter()
-                .position(|&p| p == in_idx)
-                .ok_or_else(|| Error::corrupt("7z coder input not connected"))?;
+            let k = folder.packed.iter().position(|&p| p == in_idx).ok_or_else(|| Error::corrupt("7z coder input not connected"))?;
             let pi = folder.first_pack + k;
             let (off, len) = (
-                *ctx.pack_offsets
-                    .get(pi)
-                    .ok_or_else(|| Error::corrupt("7z pack stream missing"))?,
-                *ctx.pack_sizes
-                    .get(pi)
-                    .ok_or_else(|| Error::corrupt("7z pack stream missing"))?,
+                *ctx.pack_offsets.get(pi).ok_or_else(|| Error::corrupt("7z pack stream missing"))?,
+                *ctx.pack_sizes.get(pi).ok_or_else(|| Error::corrupt("7z pack stream missing"))?,
             );
             let r = RangeReader::new(ctx.src.clone(), off, len);
             inputs.push(Box::new(BufReader::with_capacity(256 * 1024, r)));
         }
     }
-    let size = *folder
-        .unpack_sizes
-        .get(out)
-        .ok_or_else(|| Error::corrupt("7z unpack size missing"))?;
+    let size = *folder.unpack_sizes.get(out).ok_or_else(|| Error::corrupt("7z unpack size missing"))?;
     let r = coder_reader(&coder.id, &coder.props, inputs, size, ctx)?;
     Ok(Box::new(TakeExact::new(r, size)))
 }
@@ -309,23 +263,13 @@ fn one(mut inputs: Vec<BoxR>) -> Result<BoxR> {
     Ok(inputs.remove(0))
 }
 
-fn coder_reader(
-    id: &[u8],
-    props: &[u8],
-    inputs: Vec<BoxR>,
-    size: u64,
-    ctx: &DecodeCtx,
-) -> Result<BoxR> {
+fn coder_reader(id: &[u8], props: &[u8], inputs: Vec<BoxR>, size: u64, ctx: &DecodeCtx) -> Result<BoxR> {
     let lim = ctx.limits;
     let small_dict = |d: u32| d.min(size.max(4096).min(u64::from(u32::MAX)) as u32);
     Ok(match id {
         ID_COPY => one(inputs)?,
         ID_LZMA2 => {
-            let d = lzma2_dict_from_prop(
-                *props
-                    .first()
-                    .ok_or_else(|| Error::corrupt("LZMA2 properties missing"))?,
-            )?;
+            let d = lzma2_dict_from_prop(*props.first().ok_or_else(|| Error::corrupt("LZMA2 properties missing"))?)?;
             let d = small_dict(d);
             check_mem(lim, u64::from(d), "LZMA2 dictionary")?;
             let input = one(inputs)?;
@@ -343,10 +287,7 @@ fn coder_reader(
             }
             let d = small_dict(u32::from_le_bytes([props[1], props[2], props[3], props[4]]));
             check_mem(lim, u64::from(d), "LZMA dictionary")?;
-            Box::new(
-                lzma_rust2::LzmaReader::new_with_props(one(inputs)?, size, props[0], d, None)
-                    .map_err(|e| Error::corrupt(format!("lzma: {e}")))?,
-            )
+            Box::new(lzma_rust2::LzmaReader::new_with_props(one(inputs)?, size, props[0], d, None).map_err(|e| Error::corrupt(format!("lzma: {e}")))?)
         }
         ID_PPMD => {
             if props.len() < 5 {
@@ -355,49 +296,20 @@ fn coder_reader(
             let order = u32::from(props[0]);
             let mem = u32::from_le_bytes([props[1], props[2], props[3], props[4]]);
             check_mem(lim, u64::from(mem), "PPMd model")?;
-            Box::new(
-                ppmd_rust::Ppmd7Decoder::new(one(inputs)?, order, mem)
-                    .map_err(|e| Error::corrupt(format!("ppmd: {e:?}")))?,
-            )
+            Box::new(ppmd_rust::Ppmd7Decoder::new(one(inputs)?, order, mem).map_err(|e| Error::corrupt(format!("ppmd: {e:?}")))?)
         }
-        ID_BZIP2 => Box::new(crate::codecs::bz2::BzDecoder::new(
-            one(inputs)?,
-            ctx.threads.max(1),
-        )),
-        ID_DEFLATE => Box::new(crate::codecs::deflate::InflateReader::new(BufReader::new(
-            one(inputs)?,
-        ))),
-        ID_ZSTD => Box::new(crate::codecs::zstd::ZstdReader::new(
-            BufReader::new(one(inputs)?),
-            lim.max_decoder_memory,
-        )),
-        ID_DELTA => Box::new(lzma_rust2::filter::delta::DeltaReader::new(
-            one(inputs)?,
-            usize::from(props.first().copied().unwrap_or(0)) + 1,
-        )),
+        ID_BZIP2 => Box::new(crate::codecs::bz2::BzDecoder::new(one(inputs)?, ctx.threads.max(1))),
+        ID_DEFLATE => Box::new(crate::codecs::deflate::InflateReader::new(BufReader::new(one(inputs)?))),
+        ID_ZSTD => Box::new(crate::codecs::zstd::ZstdReader::new(BufReader::new(one(inputs)?), lim.max_decoder_memory)),
+        ID_DELTA => Box::new(lzma_rust2::filter::delta::DeltaReader::new(one(inputs)?, usize::from(props.first().copied().unwrap_or(0)) + 1)),
         ID_BCJ_X86 => Box::new(lzma_rust2::filter::bcj::BcjReader::new_x86(one(inputs)?, 0)),
         ID_PPC => Box::new(lzma_rust2::filter::bcj::BcjReader::new_ppc(one(inputs)?, 0)),
-        ID_IA64 => Box::new(lzma_rust2::filter::bcj::BcjReader::new_ia64(
-            one(inputs)?,
-            0,
-        )),
+        ID_IA64 => Box::new(lzma_rust2::filter::bcj::BcjReader::new_ia64(one(inputs)?, 0)),
         ID_ARM => Box::new(lzma_rust2::filter::bcj::BcjReader::new_arm(one(inputs)?, 0)),
-        ID_ARMT => Box::new(lzma_rust2::filter::bcj::BcjReader::new_arm_thumb(
-            one(inputs)?,
-            0,
-        )),
-        ID_SPARC => Box::new(lzma_rust2::filter::bcj::BcjReader::new_sparc(
-            one(inputs)?,
-            0,
-        )),
-        ID_ARM64 => Box::new(lzma_rust2::filter::bcj::BcjReader::new_arm64(
-            one(inputs)?,
-            start_pos(props),
-        )),
-        ID_RISCV => Box::new(lzma_rust2::filter::bcj::BcjReader::new_riscv(
-            one(inputs)?,
-            start_pos(props),
-        )),
+        ID_ARMT => Box::new(lzma_rust2::filter::bcj::BcjReader::new_arm_thumb(one(inputs)?, 0)),
+        ID_SPARC => Box::new(lzma_rust2::filter::bcj::BcjReader::new_sparc(one(inputs)?, 0)),
+        ID_ARM64 => Box::new(lzma_rust2::filter::bcj::BcjReader::new_arm64(one(inputs)?, start_pos(props))),
+        ID_RISCV => Box::new(lzma_rust2::filter::bcj::BcjReader::new_riscv(one(inputs)?, start_pos(props))),
         ID_BCJ2 => {
             if inputs.len() != 4 {
                 return Err(Error::corrupt("BCJ2 expects four inputs"));
@@ -409,10 +321,7 @@ fn coder_reader(
             let p = parse_aes_props(props)?;
             let cache_key = (p.salt.clone(), p.cycles);
             let key = {
-                let mut cache = ctx
-                    .keys
-                    .lock()
-                    .map_err(|_| Error::invalid("key cache poisoned"))?;
+                let mut cache = ctx.keys.lock().map_err(|_| Error::invalid("key cache poisoned"))?;
                 match cache.get(&cache_key) {
                     Some(k) => k.clone(),
                     None => {
@@ -422,19 +331,10 @@ fn coder_reader(
                     }
                 }
             };
-            Box::new(CbcDecryptReader::new(
-                one(inputs)?,
-                AesKey::new(&key[..])?,
-                p.iv,
-            ))
+            Box::new(CbcDecryptReader::new(one(inputs)?, AesKey::new(&key[..])?, p.iv))
         }
         ID_DEFLATE64 => return Err(Error::unsupported("Deflate64 compression")),
-        other => {
-            return Err(Error::unsupported(format!(
-                "7z method {}",
-                method_name(other, props)
-            )));
-        }
+        other => return Err(Error::unsupported(format!("7z method {}", method_name(other, props)))),
     })
 }
 
@@ -445,3 +345,4 @@ fn start_pos(props: &[u8]) -> usize {
         0
     }
 }
+

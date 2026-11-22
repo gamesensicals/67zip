@@ -13,21 +13,14 @@ const RC: usize = 28;
 const BC: usize = 19;
 const MC: usize = 257;
 
-const LDECODE: [u8; 28] = [
-    0, 1, 2, 3, 4, 5, 6, 7, 8, 10, 12, 14, 16, 20, 24, 28, 32, 40, 48, 56, 64, 80, 96, 112, 128,
-    160, 192, 224,
-];
-const LBITS: [u8; 28] = [
-    0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5,
-];
+const LDECODE: [u8; 28] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 10, 12, 14, 16, 20, 24, 28, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224];
+const LBITS: [u8; 28] = [0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5];
 const DDECODE: [u32; 48] = [
-    0, 1, 2, 3, 4, 6, 8, 12, 16, 24, 32, 48, 64, 96, 128, 192, 256, 384, 512, 768, 1024, 1536,
-    2048, 3072, 4096, 6144, 8192, 12288, 16384, 24576, 32768, 49152, 65536, 98304, 131072, 196608,
-    262144, 327680, 393216, 458752, 524288, 589824, 655360, 720896, 786432, 851968, 917504, 983040,
+    0, 1, 2, 3, 4, 6, 8, 12, 16, 24, 32, 48, 64, 96, 128, 192, 256, 384, 512, 768, 1024, 1536, 2048, 3072, 4096, 6144, 8192, 12288, 16384, 24576, 32768, 49152, 65536, 98304, 131072,
+    196608, 262144, 327680, 393216, 458752, 524288, 589824, 655360, 720896, 786432, 851968, 917504, 983040,
 ];
 const DBITS: [u8; 48] = [
-    0, 0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12, 12, 13,
-    13, 14, 14, 15, 15, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16,
+    0, 0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12, 12, 13, 13, 14, 14, 15, 15, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16,
 ];
 const SDDECODE: [u8; 8] = [0, 4, 8, 16, 32, 64, 128, 192];
 const SDBITS: [u8; 8] = [2, 2, 3, 4, 5, 6, 6, 6];
@@ -74,12 +67,7 @@ impl Unpack20 {
             ld: Huffman::empty(),
             dd: Huffman::empty(),
             rd: Huffman::empty(),
-            md: [
-                Huffman::empty(),
-                Huffman::empty(),
-                Huffman::empty(),
-                Huffman::empty(),
-            ],
+            md: [Huffman::empty(), Huffman::empty(), Huffman::empty(), Huffman::empty()],
             tables_read: false,
             audio: false,
             channels: 1,
@@ -164,11 +152,7 @@ impl Unpack20 {
                     i += 1;
                 }
             } else {
-                let n = if num == 17 {
-                    inp.bits(3) + 3
-                } else {
-                    inp.bits(7) + 11
-                };
+                let n = if num == 17 { inp.bits(3) + 3 } else { inp.bits(7) + 11 };
                 for _ in 0..n {
                     if i >= size {
                         break;
@@ -213,17 +197,9 @@ impl Unpack20 {
         let pch = (pch >> 3) & 0xff;
         let ch = pch.wrapping_sub(delta);
         let d = i32::from(delta as u8 as i8).wrapping_shl(3);
-        let terms = [
-            0, v.d[0], v.d[0], v.d[1], v.d[1], v.d[2], v.d[2], v.d[3], v.d[3], cd, cd,
-        ];
+        let terms = [0, v.d[0], v.d[0], v.d[1], v.d[1], v.d[2], v.d[2], v.d[3], v.d[3], cd, cd];
         for (j, t) in terms.iter().enumerate() {
-            let x = if j == 0 {
-                d
-            } else if j % 2 == 1 {
-                d.wrapping_sub(*t)
-            } else {
-                d.wrapping_add(*t)
-            };
+            let x = if j == 0 { d } else if j % 2 == 1 { d.wrapping_sub(*t) } else { d.wrapping_add(*t) };
             v.dif[j] = v.dif[j].wrapping_add(x.unsigned_abs());
         }
         let nd = i32::from(ch.wrapping_sub(v.last_char) as u8 as i8);
@@ -362,8 +338,7 @@ impl Unpack20 {
                     if ln >= LDECODE.len() {
                         return Err(bad("bad length code"));
                     }
-                    let mut len =
-                        usize::from(LDECODE[ln]) + 2 + inp.bits(u32::from(LBITS[ln])) as usize;
+                    let mut len = usize::from(LDECODE[ln]) + 2 + inp.bits(u32::from(LBITS[ln])) as usize;
                     if dist >= 0x101 {
                         len += 1;
                         if dist >= 0x2000 {
@@ -377,8 +352,7 @@ impl Unpack20 {
                 }
                 _ => {
                     let n = num - 261;
-                    let dist =
-                        u64::from(SDDECODE[n]) + 1 + u64::from(inp.bits(u32::from(SDBITS[n])));
+                    let dist = u64::from(SDDECODE[n]) + 1 + u64::from(inp.bits(u32::from(SDBITS[n])));
                     self.copy(win, 2, dist);
                 }
             }

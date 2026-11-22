@@ -57,9 +57,7 @@ fn mem_limit_kb(limits: &Limits) -> u32 {
 /// Builds a decoder for a whole compressed stream.
 pub fn decoder<'a>(c: Compression, inner: BoxRead<'a>, limits: &Limits) -> Result<BoxRead<'a>> {
     // Fused: a decoder that failed is never called again.
-    Ok(Box::new(crate::io::Fused::new(decoder_inner(
-        c, inner, limits,
-    )?)))
+    Ok(Box::new(crate::io::Fused::new(decoder_inner(c, inner, limits)?)))
 }
 
 fn decoder_inner<'a>(c: Compression, inner: BoxRead<'a>, limits: &Limits) -> Result<BoxRead<'a>> {
@@ -67,15 +65,8 @@ fn decoder_inner<'a>(c: Compression, inner: BoxRead<'a>, limits: &Limits) -> Res
     Ok(match c {
         Compression::None => Box::new(buffered),
         Compression::Gzip => Box::new(gzip::GzipReader::new(buffered)),
-        Compression::Bzip2 => Box::new(bz2::BzDecoder::new(
-            buffered,
-            crate::util::default_threads(),
-        )),
-        Compression::Xz => Box::new(lzma_rust2::XzReader::new_mem_limit(
-            buffered,
-            true,
-            mem_limit_kb(limits),
-        )),
+        Compression::Bzip2 => Box::new(bz2::BzDecoder::new(buffered, crate::util::default_threads())),
+        Compression::Xz => Box::new(lzma_rust2::XzReader::new_mem_limit(buffered, true, mem_limit_kb(limits))),
         Compression::Zstd => Box::new(zstd::ZstdReader::new(buffered, limits.max_decoder_memory)),
         Compression::Lzma => Box::new(
             lzma_rust2::LzmaReader::new_mem_limit(buffered, mem_limit_kb(limits), None)
@@ -86,12 +77,7 @@ fn decoder_inner<'a>(c: Compression, inner: BoxRead<'a>, limits: &Limits) -> Res
 }
 
 /// Reads up to `n` bytes from the start of a decoded stream (for detection).
-pub fn peek_decoded(
-    c: Compression,
-    inner: BoxRead<'_>,
-    n: usize,
-    limits: &Limits,
-) -> Result<Vec<u8>> {
+pub fn peek_decoded(c: Compression, inner: BoxRead<'_>, n: usize, limits: &Limits) -> Result<Vec<u8>> {
     let mut d = decoder(c, inner, limits)?;
     let mut buf = vec![0u8; n];
     let got = crate::io::read_full(&mut d, &mut buf).map_err(Error::from)?;
@@ -123,19 +109,13 @@ macro_rules! finish_wrapper {
 
 finish_wrapper!(PlainW, BoxWrite<'a>, |w| w);
 finish_wrapper!(GzW, gzip::GzipWriter<BoxWrite<'a>>, |w| w.finish()?);
-finish_wrapper!(BzW, bzip2::write::BzEncoder<BoxWrite<'a>>, |w| w
-    .finish()?);
+finish_wrapper!(BzW, bzip2::write::BzEncoder<BoxWrite<'a>>, |w| w.finish()?);
 finish_wrapper!(XzW, lzma_rust2::XzWriter<BoxWrite<'a>>, |w| w.finish()?);
-finish_wrapper!(XzMtW, lzma_rust2::XzWriterMt<BoxWrite<'a>>, |w| w
-    .finish()?);
-finish_wrapper!(LzipW, lzma_rust2::LzipWriter<BoxWrite<'a>>, |w| w
-    .finish()?);
-finish_wrapper!(LzipMtW, lzma_rust2::LzipWriterMt<BoxWrite<'a>>, |w| w
-    .finish()?);
-finish_wrapper!(LzmaW, lzma_rust2::LzmaWriter<BoxWrite<'a>>, |w| w
-    .finish()?);
-finish_wrapper!(ParW, parallel::ParallelWriter<BoxWrite<'a>>, |w| w
-    .finish()?);
+finish_wrapper!(XzMtW, lzma_rust2::XzWriterMt<BoxWrite<'a>>, |w| w.finish()?);
+finish_wrapper!(LzipW, lzma_rust2::LzipWriter<BoxWrite<'a>>, |w| w.finish()?);
+finish_wrapper!(LzipMtW, lzma_rust2::LzipWriterMt<BoxWrite<'a>>, |w| w.finish()?);
+finish_wrapper!(LzmaW, lzma_rust2::LzmaWriter<BoxWrite<'a>>, |w| w.finish()?);
+finish_wrapper!(ParW, parallel::ParallelWriter<BoxWrite<'a>>, |w| w.finish()?);
 
 /// Builds an encoder for a stream compression.
 ///
@@ -183,12 +163,7 @@ pub fn encoder_sized<'a>(
             let lvl = deflate_level(level);
             if threads > 1 {
                 let f = Arc::new(move |d: &[u8]| gzip::gzip_member(d, lvl));
-                Box::new(ParW(parallel::ParallelWriter::new(
-                    inner,
-                    4 << 20,
-                    threads,
-                    f,
-                )))
+                Box::new(ParW(parallel::ParallelWriter::new(inner, 4 << 20, threads, f)))
             } else {
                 Box::new(GzW(gzip::GzipWriter::new(inner, lvl, name, mtime)?))
             }
@@ -197,21 +172,15 @@ pub fn encoder_sized<'a>(
             let lvl = bzip2_level(level);
             if threads > 1 {
                 let f = Arc::new(move |d: &[u8]| {
-                    let mut e =
-                        bzip2::write::BzEncoder::new(Vec::new(), bzip2::Compression::new(lvl));
+                    let mut e = bzip2::write::BzEncoder::new(Vec::new(), bzip2::Compression::new(lvl));
                     e.write_all(d)?;
                     Ok(e.finish()?)
                 });
                 // Slightly under one bzip2 block so each chunk is one block.
                 let chunk = lvl as usize * 100_000 - 10_000;
-                Box::new(ParW(parallel::ParallelWriter::new(
-                    inner, chunk, threads, f,
-                )))
+                Box::new(ParW(parallel::ParallelWriter::new(inner, chunk, threads, f)))
             } else {
-                Box::new(BzW(bzip2::write::BzEncoder::new(
-                    inner,
-                    bzip2::Compression::new(lvl),
-                )))
+                Box::new(BzW(bzip2::write::BzEncoder::new(inner, bzip2::Compression::new(lvl))))
             }
         }
         Compression::Xz => {
@@ -220,11 +189,7 @@ pub fn encoder_sized<'a>(
             if threads > 1 {
                 let block = mt_block_size(opts.lzma_options.dict_size, threads, size_hint);
                 opts.set_block_size(NonZeroU64::new(block));
-                Box::new(XzMtW(lzma_rust2::XzWriterMt::new(
-                    inner,
-                    opts,
-                    threads as u32,
-                )?))
+                Box::new(XzMtW(lzma_rust2::XzWriterMt::new(inner, opts, threads as u32)?))
             } else {
                 Box::new(XzW(lzma_rust2::XzWriter::new(inner, opts)?))
             }
@@ -235,20 +200,14 @@ pub fn encoder_sized<'a>(
             if threads > 1 {
                 let block = mt_block_size(opts.lzma_options.dict_size, threads, size_hint);
                 opts.set_member_size(NonZeroU64::new(block));
-                Box::new(LzipMtW(lzma_rust2::LzipWriterMt::new(
-                    inner,
-                    opts,
-                    threads as u32,
-                )?))
+                Box::new(LzipMtW(lzma_rust2::LzipWriterMt::new(inner, opts, threads as u32)?))
             } else {
                 Box::new(LzipW(lzma_rust2::LzipWriter::new(inner, opts)))
             }
         }
         Compression::Lzma => {
             let opts = lzma_options(level);
-            Box::new(LzmaW(lzma_rust2::LzmaWriter::new_use_header(
-                inner, &opts, None,
-            )?))
+            Box::new(LzmaW(lzma_rust2::LzmaWriter::new_use_header(inner, &opts, None)?))
         }
         Compression::Zstd => {
             // The pure-Rust zstd encoder implements its fastest level only.
@@ -258,12 +217,7 @@ pub fn encoder_sized<'a>(
                 ruzstd::encoding::CompressionLevel::Fastest
             };
             let f = Arc::new(move |d: &[u8]| Ok(ruzstd::encoding::compress_to_vec(d, lvl)));
-            Box::new(ParW(parallel::ParallelWriter::new(
-                inner,
-                8 << 20,
-                threads.max(1),
-                f,
-            )))
+            Box::new(ParW(parallel::ParallelWriter::new(inner, 8 << 20, threads.max(1), f)))
         }
     })
 }

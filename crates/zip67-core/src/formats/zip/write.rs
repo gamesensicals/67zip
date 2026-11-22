@@ -48,48 +48,22 @@ fn zip_method_id(m: Method) -> Result<u16> {
         Method::Lzma => M_LZMA,
         Method::Zstd => M_ZSTD,
         Method::Xz => M_XZ,
-        other => {
-            return Err(Error::invalid(format!(
-                "{other:?} is not available for zip archives"
-            )));
-        }
+        other => return Err(Error::invalid(format!("{other:?} is not available for zip archives"))),
     })
 }
 
 /// Writes 32-bit sizes/offsets, signalling "see Zip64 extra" with 0xFFFFFFFF.
 fn u32_or_max(v: u64) -> u32 {
-    if v >= 0xFFFF_FFFF {
-        0xFFFF_FFFF
-    } else {
-        v as u32
-    }
+    if v >= 0xFFFF_FFFF { 0xFFFF_FFFF } else { v as u32 }
 }
 
 impl<W: Write + Seek + Send> ZipWriter<W> {
-    pub fn new(
-        out: W,
-        method: Method,
-        level: u32,
-        threads: usize,
-        password: Option<Password>,
-    ) -> Result<Self> {
+    pub fn new(out: W, method: Method, level: u32, threads: usize, password: Option<Password>) -> Result<Self> {
         zip_method_id(method)?;
-        Ok(ZipWriter {
-            out,
-            records: Vec::new(),
-            method,
-            level,
-            threads,
-            password,
-        })
+        Ok(ZipWriter { out, records: Vec::new(), method, level, threads, password })
     }
 
-    fn encoder<'a>(
-        method: Method,
-        lvl: u32,
-        threads: usize,
-        w: BoxWrite<'a>,
-    ) -> Result<Box<dyn FinishWrite + 'a>> {
+    fn encoder<'a>(method: Method, lvl: u32, threads: usize, w: BoxWrite<'a>) -> Result<Box<dyn FinishWrite + 'a>> {
         Ok(match method {
             Method::Copy => codecs::encoder(Compression::None, w, 0, 1, None, 0)?,
             Method::Deflate => Box::new(DeflateW(flate2::write::DeflateEncoder::new(
@@ -105,17 +79,9 @@ impl<W: Write + Seek + Send> ZipWriter<W> {
                 // 7-Zip compatible header: version 9.20, props size 5.
                 w.write_all(&[9, 20, 5, 0])?;
                 let enc = lzma_rust2::LzmaWriter::new_no_header(w, &opts, true)?;
-                Box::new(LzmaZipW {
-                    enc: Some(enc),
-                    header_done: false,
-                    opts,
-                })
+                Box::new(LzmaZipW { enc: Some(enc), header_done: false, opts })
             }
-            other => {
-                return Err(Error::invalid(format!(
-                    "{other:?} is not available for zip archives"
-                )));
-            }
+            other => return Err(Error::invalid(format!("{other:?} is not available for zip archives"))),
         })
     }
 }
@@ -146,10 +112,7 @@ impl LzmaZipW<'_> {
     fn header(&mut self) -> io::Result<()> {
         if !self.header_done {
             self.header_done = true;
-            let enc = self
-                .enc
-                .as_mut()
-                .ok_or_else(|| io::Error::other("finished"))?;
+            let enc = self.enc.as_mut().ok_or_else(|| io::Error::other("finished"))?;
             let props = enc.props();
             let dict = self.opts.dict_size.to_le_bytes();
             // Written straight to the underlying writer: the range encoder
@@ -163,10 +126,7 @@ impl LzmaZipW<'_> {
 impl Write for LzmaZipW<'_> {
     fn write(&mut self, b: &[u8]) -> io::Result<usize> {
         self.header()?;
-        self.enc
-            .as_mut()
-            .ok_or_else(|| io::Error::other("finished"))?
-            .write(b)
+        self.enc.as_mut().ok_or_else(|| io::Error::other("finished"))?.write(b)
     }
     fn flush(&mut self) -> io::Result<()> {
         Ok(())
@@ -211,17 +171,12 @@ impl<W: Write + Seek + Send> ArchiveWriter for ZipWriter<W> {
             EntryKind::Symlink => 0o120000,
             _ => 0o100000,
         };
-        let ext_attr = ((type_bits | (item.mode & 0o7777)) << 16)
-            | if item.kind == EntryKind::Dir { 0x10 } else { 0 };
+        let ext_attr = ((type_bits | (item.mode & 0o7777)) << 16) | if item.kind == EntryKind::Dir { 0x10 } else { 0 };
 
         let is_dir = item.kind == EntryKind::Dir;
         let symlink = item.kind == EntryKind::Symlink;
         // Directories and symlinks are stored; small files too (no gain).
-        let method = if is_dir || symlink || item.size == 0 {
-            Method::Copy
-        } else {
-            self.method
-        };
+        let method = if is_dir || symlink || item.size == 0 { Method::Copy } else { self.method };
         let method_id = zip_method_id(method)?;
         let encrypt = self.password.is_some() && !is_dir;
         let zip64 = item.size >= 0xFFFF_0000;
@@ -299,28 +254,12 @@ impl<W: Write + Seek + Send> ArchiveWriter for ZipWriter<W> {
             let (lvl, threads) = (self.level, self.threads);
             let (c, n) = if let Some(pw) = &self.password {
                 let mut aes = AesZipWriter::new(&mut out, pw)?;
-                let r = compress_stream(
-                    src,
-                    Box::new(&mut aes),
-                    method,
-                    lvl,
-                    threads,
-                    progress,
-                    !symlink,
-                )?;
+                let r = compress_stream(src, Box::new(&mut aes), method, lvl, threads, progress, !symlink)?;
                 // Appends the authentication code after the encrypted data.
                 aes.finish()?;
                 r
             } else {
-                compress_stream(
-                    src,
-                    Box::new(&mut out),
-                    method,
-                    lvl,
-                    threads,
-                    progress,
-                    !symlink,
-                )?
+                compress_stream(src, Box::new(&mut out), method, lvl, threads, progress, !symlink)?
             };
             crc = c;
             usize = n;
@@ -336,8 +275,7 @@ impl<W: Write + Seek + Send> ArchiveWriter for ZipWriter<W> {
         self.out.write_all(&stored_crc.to_le_bytes())?;
         if zip64 {
             self.out.write_all(&[0xFF; 8])?;
-            self.out
-                .seek(SeekFrom::Start(offset + 30 + name_bytes.len() as u64 + 4))?;
+            self.out.seek(SeekFrom::Start(offset + 30 + name_bytes.len() as u64 + 4))?;
             self.out.write_all(&usize.to_le_bytes())?;
             self.out.write_all(&csize.to_le_bytes())?;
         } else {
@@ -397,11 +335,7 @@ impl<W: Write + Seek + Send> ArchiveWriter for ZipWriter<W> {
                 extra.push(3);
                 extra.extend_from_slice(&m.to_le_bytes());
             }
-            let need = if z64.is_empty() {
-                r.version_needed
-            } else {
-                r.version_needed.max(45)
-            };
+            let need = if z64.is_empty() { r.version_needed } else { r.version_needed.max(45) };
             let mut h = Vec::with_capacity(46 + r.name.len() + extra.len());
             h.extend_from_slice(&0x0201_4b50u32.to_le_bytes());
             h.extend_from_slice(&((3u16 << 8) | 63).to_le_bytes());
@@ -460,6 +394,7 @@ impl<W: Write + Seek + Send> ArchiveWriter for ZipWriter<W> {
         Ok(())
     }
 }
+
 
 fn compress_stream(
     src: &mut dyn Read,

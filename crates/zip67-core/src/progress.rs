@@ -52,10 +52,7 @@ impl Default for Progress {
 
 impl Progress {
     pub fn new() -> Self {
-        Progress {
-            inner: Arc::new(Inner::default()),
-            started: Instant::now(),
-        }
+        Progress { inner: Arc::new(Inner::default()), started: Instant::now() }
     }
 
     pub fn set_total(&self, bytes: u64) {
@@ -90,11 +87,7 @@ impl Progress {
         }
     }
     pub fn warnings(&self) -> Vec<String> {
-        self.inner
-            .warnings
-            .lock()
-            .map(|w| w.clone())
-            .unwrap_or_default()
+        self.inner.warnings.lock().map(|w| w.clone()).unwrap_or_default()
     }
 
     pub fn cancel(&self) {
@@ -126,11 +119,7 @@ impl Progress {
         }
         if let Ok(mut paused) = self.inner.paused.lock() {
             while *paused && !self.is_cancelled() {
-                match self
-                    .inner
-                    .resume
-                    .wait_timeout(paused, Duration::from_millis(200))
-                {
+                match self.inner.resume.wait_timeout(paused, Duration::from_millis(200)) {
                     Ok((guard, _)) => paused = guard,
                     Err(_) => break,
                 }
@@ -149,12 +138,7 @@ impl Progress {
             files_total: self.inner.files_total.load(Ordering::Relaxed),
             files_done: self.inner.files_done.load(Ordering::Relaxed),
             packed: self.inner.packed.load(Ordering::Relaxed),
-            current: self
-                .inner
-                .current
-                .lock()
-                .map(|c| c.clone())
-                .unwrap_or_default(),
+            current: self.inner.current.lock().map(|c| c.clone()).unwrap_or_default(),
             elapsed_ms: self.started.elapsed().as_millis() as u64,
             paused: self.is_paused(),
         }

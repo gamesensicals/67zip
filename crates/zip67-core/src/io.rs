@@ -54,13 +54,7 @@ pub struct SizeGuard<R> {
 
 impl<R: Read> SizeGuard<R> {
     pub fn new(inner: R, expected: Option<u64>, max: u64) -> Self {
-        SizeGuard {
-            inner,
-            expected,
-            max,
-            produced: 0,
-            finished: false,
-        }
+        SizeGuard { inner, expected, max, produced: 0, finished: false }
     }
 }
 
@@ -114,13 +108,7 @@ pub struct CrcCheck<R> {
 
 impl<R: Read> CrcCheck<R> {
     pub fn new(inner: R, expected: Option<u32>, name: &str) -> Self {
-        CrcCheck {
-            inner,
-            hasher: crc32fast::Hasher::new(),
-            expected,
-            name: name.to_string(),
-            done: false,
-        }
+        CrcCheck { inner, hasher: crc32fast::Hasher::new(), expected, name: name.to_string(), done: false }
     }
 }
 
@@ -155,10 +143,7 @@ pub struct Fused<R> {
 
 impl<R: Read> Fused<R> {
     pub fn new(inner: R) -> Self {
-        Fused {
-            inner,
-            failed: None,
-        }
+        Fused { inner, failed: None }
     }
 }
 
@@ -187,19 +172,11 @@ pub struct Progressed<'p, R> {
 impl<'p, R: Read> Progressed<'p, R> {
     /// Counts into `done` (uncompressed bytes).
     pub fn new(inner: R, progress: &'p Progress) -> Self {
-        Progressed {
-            inner,
-            progress,
-            packed: false,
-        }
+        Progressed { inner, progress, packed: false }
     }
     /// Counts into `packed` (compressed bytes) instead.
     pub fn packed(inner: R, progress: &'p Progress) -> Self {
-        Progressed {
-            inner,
-            progress,
-            packed: true,
-        }
+        Progressed { inner, progress, packed: true }
     }
 }
 

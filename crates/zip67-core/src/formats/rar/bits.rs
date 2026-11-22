@@ -33,32 +33,14 @@ impl Default for Input {
 
 impl Input {
     pub fn new(src: Box<dyn Read + Send>) -> Self {
-        Input {
-            buf: Vec::new(),
-            len: 0,
-            pos: 0,
-            bit: 0,
-            base: 0,
-            src,
-            eof: false,
-            err: None,
-        }
+        Input { buf: Vec::new(), len: 0, pos: 0, bit: 0, base: 0, src, eof: false, err: None }
     }
 
     /// Input over bytes already in memory.
     pub fn from_vec(mut data: Vec<u8>) -> Self {
         let len = data.len();
         data.resize(len + PAD, 0);
-        Input {
-            buf: data,
-            len,
-            pos: 0,
-            bit: 0,
-            base: 0,
-            src: Box::new(io::empty()),
-            eof: true,
-            err: None,
-        }
+        Input { buf: data, len, pos: 0, bit: 0, base: 0, src: Box::new(io::empty()), eof: true, err: None }
     }
 
     /// Makes sure at least `need` bytes after the read position are
@@ -114,11 +96,7 @@ impl Input {
     fn peek32_slow(&self) -> u32 {
         let mut v = 0u64;
         for i in 0..8 {
-            let b = if self.pos + i < self.len {
-                self.buf[self.pos + i]
-            } else {
-                0
-            };
+            let b = if self.pos + i < self.len { self.buf[self.pos + i] } else { 0 };
             v = (v << 8) | u64::from(b);
         }
         ((v << self.bit) >> 32) as u32
@@ -163,11 +141,7 @@ impl Input {
         if self.pos + 1 > self.len && !self.eof {
             self.refill(1);
         }
-        let b = if self.pos < self.len {
-            self.buf[self.pos]
-        } else {
-            0
-        };
+        let b = if self.pos < self.len { self.buf[self.pos] } else { 0 };
         self.pos += 1;
         b
     }
@@ -201,12 +175,7 @@ mod tests {
 
     #[test]
     fn bits_and_bytes() {
-        let mut i = Input::new(Box::new(io::Cursor::new(vec![
-            0b1010_0000,
-            0xff,
-            0x12,
-            0x34,
-        ])));
+        let mut i = Input::new(Box::new(io::Cursor::new(vec![0b1010_0000, 0xff, 0x12, 0x34])));
         i.ensure(4);
         assert_eq!(i.bits(3), 0b101);
         assert_eq!(i.bits(5), 0);

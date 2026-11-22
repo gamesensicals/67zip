@@ -12,13 +12,8 @@ fn main() {
     let mut buf = vec![0u8; 1 << 20];
     loop {
         let k = d.read(&mut buf).unwrap();
-        if k == 0 {
-            break;
-        }
+        if k == 0 { break }
         n += k as u64;
     }
-    println!(
-        "{path}: {n} bytes, {threads} threads: {:.2}s",
-        t.elapsed().as_secs_f64()
-    );
+    println!("{path}: {n} bytes, {threads} threads: {:.2}s", t.elapsed().as_secs_f64());
 }

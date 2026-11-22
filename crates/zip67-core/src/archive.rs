@@ -89,13 +89,7 @@ pub trait ArchiveReader: Send {
 pub fn is_entry_local(err: &Error) -> bool {
     matches!(
         err,
-        Error::Checksum(_)
-            | Error::Corrupt(_)
-            | Error::WrongPassword
-            | Error::Unsupported(_)
-            | Error::PasswordRequired
-            | Error::UnsafePath(_)
-            | Error::InvalidInput(_)
+        Error::Checksum(_) | Error::Corrupt(_) | Error::WrongPassword | Error::Unsupported(_) | Error::PasswordRequired | Error::UnsafePath(_) | Error::InvalidInput(_)
     )
 }
 
@@ -108,24 +102,15 @@ pub fn open(path: &Path, opts: &OpenOptions) -> Result<Box<dyn ArchiveReader>> {
         return open_reader(src, size, &crate::source::logical_name(path), opts);
     };
     let n = set.parts.len();
-    if matches!(
-        set.scheme,
-        crate::source::Scheme::PartBeforeExt | crate::source::Scheme::RarOld
-    ) && starts_with_rar(&set.parts[0])
-    {
+    if matches!(set.scheme, crate::source::Scheme::PartBeforeExt | crate::source::Scheme::RarOld) && starts_with_rar(&set.parts[0]) {
         // RAR volumes each have their own headers: not a byte-level split.
         let mut parts = Vec::with_capacity(n);
         for p in &set.parts {
             let f = std::fs::File::open(p)?;
             let len = f.metadata()?.len();
-            parts.push((
-                Box::new(std::io::BufReader::with_capacity(64 * 1024, f)) as Box<dyn ReadSeek>,
-                len,
-            ));
+            parts.push((Box::new(std::io::BufReader::with_capacity(64 * 1024, f)) as Box<dyn ReadSeek>, len));
         }
-        return Ok(Box::new(crate::formats::rar::RarReader::open_volumes(
-            parts, opts,
-        )?));
+        return Ok(Box::new(crate::formats::rar::RarReader::open_volumes(parts, opts)?));
     }
     let mut opts = opts.clone();
     if set.scheme == crate::source::Scheme::SplitZip {
@@ -135,10 +120,7 @@ pub fn open(path: &Path, opts: &OpenOptions) -> Result<Box<dyn ArchiveReader>> {
     let mv = crate::source::MultiVolume::open(&set.parts)?;
     let size = mv.len();
     match open_reader(Box::new(mv), size, &set.logical, &opts) {
-        Ok(reader) => Ok(Box::new(WithVolumes {
-            inner: reader,
-            volumes: n as u32,
-        })),
+        Ok(reader) => Ok(Box::new(WithVolumes { inner: reader, volumes: n as u32 })),
         Err(e @ (Error::Corrupt(_) | Error::UnsupportedFormat)) => Err(Error::Corrupt(format!(
             "{e}. This is a split archive and {n} part{} {} found; a later part may be missing or incomplete",
             if n == 1 { "" } else { "s" },
@@ -150,49 +132,22 @@ pub fn open(path: &Path, opts: &OpenOptions) -> Result<Box<dyn ArchiveReader>> {
 
 fn starts_with_rar(path: &Path) -> bool {
     let mut head = [0u8; 8];
-    std::fs::File::open(path)
-        .and_then(|mut f| f.read_exact(&mut head))
-        .is_ok()
-        && crate::formats::rar::is_rar(&head)
+    std::fs::File::open(path).and_then(|mut f| f.read_exact(&mut head)).is_ok() && crate::formats::rar::is_rar(&head)
 }
 
 /// Opens an archive from any seekable source.
-pub fn open_reader(
-    mut src: Box<dyn ReadSeek>,
-    size: u64,
-    name: &str,
-    opts: &OpenOptions,
-) -> Result<Box<dyn ArchiveReader>> {
+pub fn open_reader(mut src: Box<dyn ReadSeek>, size: u64, name: &str, opts: &OpenOptions) -> Result<Box<dyn ArchiveReader>> {
     let t = match opts.format {
         Some(t) => t,
         None => crate::detect::detect(src.as_mut(), name, &opts.limits)?,
     };
     match t.container {
-        Container::Zip => Ok(Box::new(crate::formats::zip::ZipReader::open(
-            src, size, opts,
-        )?)),
-        Container::Tar => Ok(Box::new(crate::formats::tar::TarReader::open(
-            src,
-            size,
-            t.compression,
-            opts,
-        )?)),
-        Container::Raw => Ok(Box::new(crate::formats::raw::RawReader::open(
-            src,
-            size,
-            name,
-            t.compression,
-            opts,
-        )?)),
-        Container::SevenZ => Ok(Box::new(crate::formats::sevenz::SevenZReader::open(
-            src, size, opts,
-        )?)),
-        Container::Iso => Ok(Box::new(crate::formats::iso::IsoReader::open(
-            src, size, opts,
-        )?)),
-        Container::Rar => Ok(Box::new(crate::formats::rar::RarReader::open(
-            src, size, opts,
-        )?)),
+        Container::Zip => Ok(Box::new(crate::formats::zip::ZipReader::open(src, size, opts)?)),
+        Container::Tar => Ok(Box::new(crate::formats::tar::TarReader::open(src, size, t.compression, opts)?)),
+        Container::Raw => Ok(Box::new(crate::formats::raw::RawReader::open(src, size, name, t.compression, opts)?)),
+        Container::SevenZ => Ok(Box::new(crate::formats::sevenz::SevenZReader::open(src, size, opts)?)),
+        Container::Iso => Ok(Box::new(crate::formats::iso::IsoReader::open(src, size, opts)?)),
+        Container::Rar => Ok(Box::new(crate::formats::rar::RarReader::open(src, size, opts)?)),
     }
 }
 
@@ -213,12 +168,7 @@ impl ArchiveReader for WithVolumes {
         i.volumes = self.volumes;
         i
     }
-    fn extract(
-        &mut self,
-        selected: &dyn Fn(&Entry) -> bool,
-        visitor: &mut dyn EntryVisitor,
-        progress: &Progress,
-    ) -> Result<()> {
+    fn extract(&mut self, selected: &dyn Fn(&Entry) -> bool, visitor: &mut dyn EntryVisitor, progress: &Progress) -> Result<()> {
         self.inner.extract(selected, visitor, progress)
     }
 }

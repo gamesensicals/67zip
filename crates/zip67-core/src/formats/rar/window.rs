@@ -69,10 +69,7 @@ pub struct Window {
 impl Window {
     /// `size` is rounded up to a power of two.
     pub fn new(size: usize) -> Result<Self> {
-        let size = size
-            .max(1 << 16)
-            .checked_next_power_of_two()
-            .ok_or_else(|| Error::limit("RAR dictionary too large"))?;
+        let size = size.max(1 << 16).checked_next_power_of_two().ok_or_else(|| Error::limit("RAR dictionary too large"))?;
         // Zeroed by the allocator, so pages the data never reaches are not
         // touched (dictionaries can be far larger than the files in them).
         let buf = vec![0u8; size];
@@ -97,9 +94,7 @@ impl Window {
     /// Enlarges the dictionary, keeping its content (solid archives whose
     /// later files use a larger dictionary).
     pub fn grow(&mut self, size: usize) -> Result<()> {
-        let size = size
-            .checked_next_power_of_two()
-            .ok_or_else(|| Error::limit("RAR dictionary too large"))?;
+        let size = size.checked_next_power_of_two().ok_or_else(|| Error::limit("RAR dictionary too large"))?;
         if size <= self.buf.len() {
             return Ok(());
         }
@@ -130,9 +125,7 @@ impl Window {
     /// overwritten.
     #[inline(always)]
     pub fn space(&self) -> u64 {
-        (self.wr + self.buf.len() as u64)
-            .saturating_sub(MARGIN)
-            .saturating_sub(self.pos)
+        (self.wr + self.buf.len() as u64).saturating_sub(MARGIN).saturating_sub(self.pos)
     }
 
     #[inline(always)]
@@ -212,10 +205,7 @@ impl Window {
             while self.filters.front().is_some_and(|f| f.start < self.wr) {
                 self.filters.pop_front();
             }
-            let limit = self
-                .filters
-                .front()
-                .map_or(self.pos, |f| f.start.min(self.pos));
+            let limit = self.filters.front().map_or(self.pos, |f| f.start.min(self.pos));
             if self.wr < limit {
                 let n = out.len().min((limit - self.wr) as usize);
                 self.copy_out(self.wr, &mut out[..n]);
@@ -223,15 +213,11 @@ impl Window {
                 self.file_written += n as u64;
                 return n;
             }
-            let Some(f) = self.filters.front() else {
-                return 0;
-            };
+            let Some(f) = self.filters.front() else { return 0 };
             if f.start != self.wr || self.pos < f.start + u64::from(f.len) {
                 return 0;
             }
-            let Some(f) = self.filters.pop_front() else {
-                return 0;
-            };
+            let Some(f) = self.filters.pop_front() else { return 0 };
             let end = f.start + u64::from(f.len);
             if f.len > 0 {
                 let mut block = vec![0u8; f.len as usize];
@@ -257,9 +243,7 @@ impl Window {
                 let mut p = 0usize;
                 while p + 3 < data.len() {
                     if data[p + 3] == 0xeb {
-                        let mut v = u32::from(data[p])
-                            | u32::from(data[p + 1]) << 8
-                            | u32::from(data[p + 2]) << 16;
+                        let mut v = u32::from(data[p]) | u32::from(data[p + 1]) << 8 | u32::from(data[p + 2]) << 16;
                         v = v.wrapping_sub(base.wrapping_add(p as u32) / 4);
                         data[p] = v as u8;
                         data[p + 1] = (v >> 8) as u8;
@@ -288,9 +272,7 @@ impl Window {
                 let mut out = self.run_vm(kind, r, &data, offset);
                 // Several filters may be stacked on the same block.
                 while let Some(next) = self.filters.front() {
-                    let FilterOp::Vm { kind: k2, r: r2 } = next.op else {
-                        break;
-                    };
+                    let FilterOp::Vm { kind: k2, r: r2 } = next.op else { break };
                     if next.start != f.start || next.len as usize != out.len() {
                         break;
                     }
@@ -398,12 +380,7 @@ fn vm_filter(mem: &mut [u8], kind: VmKind, r: &[u32; 7]) -> bool {
                                 let start = i * 41 + 5;
                                 if itanium_get(d, start + 37, 4) == 5 {
                                     let off = itanium_get(d, start + 13, 20);
-                                    itanium_set(
-                                        d,
-                                        off.wrapping_sub(file_offset) & 0xfffff,
-                                        start + 13,
-                                        20,
-                                    );
+                                    itanium_set(d, off.wrapping_sub(file_offset) & 0xfffff, start + 13, 20);
                                 }
                             }
                         }
@@ -566,12 +543,7 @@ mod tests {
     fn delta_filter_block() {
         let mut w = Window::new(1 << 16).unwrap();
         w.start_file(false);
-        w.add_filter(Filter {
-            start: 2,
-            len: 4,
-            op: FilterOp::Delta5 { channels: 2 },
-        })
-        .unwrap();
+        w.add_filter(Filter { start: 2, len: 4, op: FilterOp::Delta5 { channels: 2 } }).unwrap();
         for b in [9u8, 9, 0xff, 0xfe, 0xff, 0xfe, 7] {
             w.put(b);
         }

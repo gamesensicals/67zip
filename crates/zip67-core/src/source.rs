@@ -64,11 +64,7 @@ fn number_to_letters(n: u64) -> Option<String> {
     if n >= 26 * 26 {
         return None;
     }
-    Some(format!(
-        "{}{}",
-        (b'a' + (n / 26) as u8) as char,
-        (b'a' + (n % 26) as u8) as char
-    ))
+    Some(format!("{}{}", (b'a' + (n / 26) as u8) as char, (b'a' + (n % 26) as u8) as char))
 }
 
 /// Recognises split-archive part names (no file system access).
@@ -79,8 +75,7 @@ pub fn parse_part_name(name: &str) -> Option<PartName> {
     }
     let lower = last.to_ascii_lowercase();
     // backup.z01 (split zip, the .zip part is handled by `volume_set`)
-    if lower.len() >= 3 && lower.starts_with('z') && lower[1..].bytes().all(|b| b.is_ascii_digit())
-    {
+    if lower.len() >= 3 && lower.starts_with('z') && lower[1..].bytes().all(|b| b.is_ascii_digit()) {
         let n: u64 = lower[1..].parse().ok()?;
         if n >= 1 {
             return Some(PartName {
@@ -95,10 +90,7 @@ pub fn parse_part_name(name: &str) -> Option<PartName> {
         }
     }
     // backup.r00 (old RAR volumes; backup.rar is the first part)
-    if lower.len() == 3
-        && (b'r'..=b'y').contains(&lower.as_bytes()[0])
-        && lower[1..].bytes().all(|b| b.is_ascii_digit())
-    {
+    if lower.len() == 3 && (b'r'..=b'y').contains(&lower.as_bytes()[0]) && lower[1..].bytes().all(|b| b.is_ascii_digit()) {
         let letter = u64::from(lower.as_bytes()[0] - b'r');
         let n: u64 = lower[1..].parse().ok()?;
         let upper = last.as_bytes()[0].is_ascii_uppercase();
@@ -113,10 +105,7 @@ pub fn parse_part_name(name: &str) -> Option<PartName> {
         });
     }
     // backup.7z.part1
-    if lower.len() > 4
-        && lower.starts_with("part")
-        && lower[4..].bytes().all(|b| b.is_ascii_digit())
-    {
+    if lower.len() > 4 && lower.starts_with("part") && lower[4..].bytes().all(|b| b.is_ascii_digit()) {
         let n: u64 = lower[4..].parse().ok()?;
         return Some(PartName {
             logical: base.to_string(),
@@ -134,17 +123,13 @@ pub fn parse_part_name(name: &str) -> Option<PartName> {
     while let Some(at) = lname[..search_end].rfind(".part") {
         search_end = at;
         let digits_start = at + 5;
-        let digits_len = lname[digits_start..]
-            .bytes()
-            .take_while(u8::is_ascii_digit)
-            .count();
+        let digits_len = lname[digits_start..].bytes().take_while(u8::is_ascii_digit).count();
         let after = digits_start + digits_len;
         if at == 0 || digits_len == 0 || lname.as_bytes().get(after) != Some(&b'.') {
             continue;
         }
         let ext = &name[after + 1..];
-        let ext_ok = !ext.is_empty()
-            && (!ext.contains('.') && ext.len() <= 8 || is_archive_ext(&format!("x.{ext}")));
+        let ext_ok = !ext.is_empty() && (!ext.contains('.') && ext.len() <= 8 || is_archive_ext(&format!("x.{ext}")));
         if !ext_ok {
             continue;
         }
@@ -161,9 +146,7 @@ pub fn parse_part_name(name: &str) -> Option<PartName> {
         });
     }
     // backup.7z.001 (2-digit numbers only after an archive extension)
-    if last.bytes().all(|b| b.is_ascii_digit())
-        && (last.len() >= 3 || (last.len() == 2 && is_archive_ext(base)))
-    {
+    if last.bytes().all(|b| b.is_ascii_digit()) && (last.len() >= 3 || (last.len() == 2 && is_archive_ext(base))) {
         let n: u64 = last.parse().ok()?;
         let first = if last.len() == 2 { 0 } else { 1 };
         return Some(PartName {
@@ -206,11 +189,7 @@ impl PartName {
                 return None;
             }
             let letter = (b'r' + (k / 100) as u8) as char;
-            let letter = if self.suffix == "RAR" {
-                letter.to_ascii_uppercase()
-            } else {
-                letter
-            };
+            let letter = if self.suffix == "RAR" { letter.to_ascii_uppercase() } else { letter };
             return Some(format!("{}{letter}{:02}", self.prefix, k % 100));
         }
         let raw = n + self.first - 1;
@@ -225,9 +204,7 @@ impl PartName {
 /// Name of the whole archive for a part name (`a.part2.7z` -> `a.7z`), or
 /// the name itself.
 pub fn logical_name_str(name: &str) -> String {
-    parse_part_name(name)
-        .map(|p| p.logical)
-        .unwrap_or_else(|| name.to_string())
+    parse_part_name(name).map(|p| p.logical).unwrap_or_else(|| name.to_string())
 }
 
 /// All parts of a split archive.
@@ -252,18 +229,13 @@ impl VolumeSet {
 }
 
 fn find_split_zip_last(dir: &Path, base: &str) -> Option<PathBuf> {
-    ["zip", "ZIP", "Zip"]
-        .iter()
-        .map(|e| dir.join(format!("{base}.{e}")))
-        .find(|p| p.is_file())
+    ["zip", "ZIP", "Zip"].iter().map(|e| dir.join(format!("{base}.{e}"))).find(|p| p.is_file())
 }
 
 /// Finds all parts when `path` belongs to a split archive. `Ok(None)` for
 /// ordinary files. Errors name the first missing part.
 pub fn volume_set(path: &Path) -> Result<Option<VolumeSet>> {
-    let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
-        return Ok(None);
-    };
+    let Some(name) = path.file_name().and_then(|n| n.to_str()) else { return Ok(None) };
     let dir = match path.parent() {
         Some(d) if !d.as_os_str().is_empty() => d.to_path_buf(),
         _ => PathBuf::from("."),
@@ -293,18 +265,13 @@ pub fn volume_set(path: &Path) -> Result<Option<VolumeSet>> {
 
     // Unpadded series (part1 ... part10) are found with width 1.
     let mut width = p.width;
-    if !p.name_of(1, width).is_some_and(|n| dir.join(n).is_file())
-        && width > 1
-        && dir.join(p.name_of(1, 1).unwrap_or_default()).is_file()
-    {
+    if !p.name_of(1, width).is_some_and(|n| dir.join(n).is_file()) && width > 1 && dir.join(p.name_of(1, 1).unwrap_or_default()).is_file() {
         width = 1;
     }
     let mut parts = Vec::new();
     let mut n = 1u64;
     while n <= 100_000 {
-        let Some(candidate) = p.name_of(n, width).map(|f| dir.join(f)) else {
-            break;
-        };
+        let Some(candidate) = p.name_of(n, width).map(|f| dir.join(f)) else { break };
         if !candidate.is_file() {
             break;
         }
@@ -312,41 +279,23 @@ pub fn volume_set(path: &Path) -> Result<Option<VolumeSet>> {
         n += 1;
     }
     let missing = n;
-    let gap_after = p
-        .name_of(missing + 1, width)
-        .is_some_and(|f| dir.join(f).is_file());
+    let gap_after = p.name_of(missing + 1, width).is_some_and(|f| dir.join(f).is_file());
     if parts.is_empty() {
         let first = p.name_of(1, width).unwrap_or_default();
-        return Err(Error::invalid(format!(
-            "the first part of this split archive ({first}) is missing"
-        )));
+        return Err(Error::invalid(format!("the first part of this split archive ({first}) is missing")));
     }
     if gap_after || p.number > missing && p.scheme != Scheme::SplitZip {
         let which = p.name_of(missing, width).unwrap_or_default();
-        return Err(Error::invalid(format!(
-            "part {missing} of this split archive ({which}) is missing"
-        )));
+        return Err(Error::invalid(format!("part {missing} of this split archive ({which}) is missing")));
     }
     if p.scheme == Scheme::SplitZip {
-        let base = p
-            .logical
-            .strip_suffix(".zip")
-            .unwrap_or(&p.logical)
-            .to_string();
+        let base = p.logical.strip_suffix(".zip").unwrap_or(&p.logical).to_string();
         match find_split_zip_last(&dir, &base) {
             Some(z) => parts.push(z),
-            None => {
-                return Err(Error::invalid(format!(
-                    "the last part of this split zip ({base}.zip) is missing"
-                )));
-            }
+            None => return Err(Error::invalid(format!("the last part of this split zip ({base}.zip) is missing"))),
         }
     }
-    Ok(Some(VolumeSet {
-        parts,
-        logical: p.logical,
-        scheme: p.scheme,
-    }))
+    Ok(Some(VolumeSet { parts, logical: p.logical, scheme: p.scheme }))
 }
 
 /// Parts of a split archive (just the file itself otherwise).
@@ -398,11 +347,7 @@ impl MultiVolume {
             files.push((f, start, l));
             start += l;
         }
-        Ok(MultiVolume {
-            files,
-            len: start,
-            pos: 0,
-        })
+        Ok(MultiVolume { files, len: start, pos: 0 })
     }
 }
 
@@ -412,9 +357,7 @@ impl Read for MultiVolume {
             return Ok(0);
         }
         let idx = self.files.partition_point(|(_, s, l)| s + l <= self.pos);
-        let Some((f, start, l)) = self.files.get_mut(idx) else {
-            return Ok(0);
-        };
+        let Some((f, start, l)) = self.files.get_mut(idx) else { return Ok(0) };
         let off = self.pos - *start;
         f.seek(SeekFrom::Start(off))?;
         let n = buf.len().min((*l - off) as usize);
@@ -436,10 +379,7 @@ impl Seek for MultiVolume {
                 self.pos = p;
                 Ok(p)
             }
-            None => Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "seek before start",
-            )),
+            None => Err(io::Error::new(io::ErrorKind::InvalidInput, "seek before start")),
         }
     }
 }
@@ -451,40 +391,22 @@ mod tests {
     #[test]
     fn names() {
         let p = parse_part_name("backup.7z.003").unwrap();
-        assert_eq!(
-            (p.logical.as_str(), p.number, p.scheme),
-            ("backup.7z", 3, Scheme::Numbered)
-        );
+        assert_eq!((p.logical.as_str(), p.number, p.scheme), ("backup.7z", 3, Scheme::Numbered));
         let p = parse_part_name("backup.part02.rar").unwrap();
-        assert_eq!(
-            (p.logical.as_str(), p.number, p.scheme),
-            ("backup.rar", 2, Scheme::PartBeforeExt)
-        );
+        assert_eq!((p.logical.as_str(), p.number, p.scheme), ("backup.rar", 2, Scheme::PartBeforeExt));
         let p = parse_part_name("Backup.Part10.7Z").unwrap();
         assert_eq!((p.logical.as_str(), p.number), ("Backup.7Z", 10));
         let p = parse_part_name("backup.zip.part1").unwrap();
-        assert_eq!(
-            (p.logical.as_str(), p.scheme),
-            ("backup.zip", Scheme::PartAfterExt)
-        );
+        assert_eq!((p.logical.as_str(), p.scheme), ("backup.zip", Scheme::PartAfterExt));
         let p = parse_part_name("backup.z07").unwrap();
-        assert_eq!(
-            (p.logical.as_str(), p.number, p.scheme),
-            ("backup.zip", 7, Scheme::SplitZip)
-        );
+        assert_eq!((p.logical.as_str(), p.number, p.scheme), ("backup.zip", 7, Scheme::SplitZip));
         let p = parse_part_name("backup.r00").unwrap();
-        assert_eq!(
-            (p.logical.as_str(), p.number, p.scheme),
-            ("backup.rar", 2, Scheme::RarOld)
-        );
+        assert_eq!((p.logical.as_str(), p.number, p.scheme), ("backup.rar", 2, Scheme::RarOld));
         assert_eq!(parse_part_name("backup.s01").unwrap().number, 103);
         assert_eq!(p.name_of(1, 2).unwrap(), "backup.rar");
         assert_eq!(p.name_of(102, 2).unwrap(), "backup.s00");
         let p = parse_part_name("backup.tar.gz.ab").unwrap();
-        assert_eq!(
-            (p.logical.as_str(), p.number, p.scheme),
-            ("backup.tar.gz", 2, Scheme::Letters)
-        );
+        assert_eq!((p.logical.as_str(), p.number, p.scheme), ("backup.tar.gz", 2, Scheme::Letters));
         let p = parse_part_name("backup.7z.00").unwrap();
         assert_eq!(p.number, 1);
         // Not parts:
@@ -502,23 +424,7 @@ mod tests {
         let tmp = std::env::temp_dir().join(format!("67zip-vol-{}", std::process::id()));
         std::fs::create_dir_all(&tmp).unwrap();
         let mk = |n: &str| std::fs::write(tmp.join(n), b"x").unwrap();
-        for n in [
-            "a.part1.7z",
-            "a.part2.7z",
-            "a.part3.7z",
-            "b.7z.001",
-            "b.7z.002",
-            "c.z01",
-            "c.z02",
-            "c.zip",
-            "d.part1.rar",
-            "d.part3.rar",
-            "e.part1.7z",
-            "e.part10.7z",
-            "f.rar",
-            "f.r00",
-            "f.r01",
-        ] {
+        for n in ["a.part1.7z", "a.part2.7z", "a.part3.7z", "b.7z.001", "b.7z.002", "c.z01", "c.z02", "c.zip", "d.part1.rar", "d.part3.rar", "e.part1.7z", "e.part10.7z", "f.rar", "f.r00", "f.r01"] {
             mk(n);
         }
         for i in 2..=9 {
@@ -527,45 +433,20 @@ mod tests {
         let s = volume_set(&tmp.join("a.part2.7z")).unwrap().unwrap();
         assert_eq!(s.parts.len(), 3);
         assert_eq!(s.logical, "a.7z");
-        assert_eq!(
-            volume_set(&tmp.join("b.7z.002"))
-                .unwrap()
-                .unwrap()
-                .parts
-                .len(),
-            2
-        );
+        assert_eq!(volume_set(&tmp.join("b.7z.002")).unwrap().unwrap().parts.len(), 2);
         let z = volume_set(&tmp.join("c.zip")).unwrap().unwrap();
         assert_eq!(z.scheme, Scheme::SplitZip);
         assert!(z.parts.last().unwrap().ends_with("c.zip"));
-        assert_eq!(
-            volume_set(&tmp.join("c.z02")).unwrap().unwrap().parts.len(),
-            3
-        );
-        let err = volume_set(&tmp.join("d.part1.rar"))
-            .unwrap_err()
-            .to_string();
+        assert_eq!(volume_set(&tmp.join("c.z02")).unwrap().unwrap().parts.len(), 3);
+        let err = volume_set(&tmp.join("d.part1.rar")).unwrap_err().to_string();
         assert!(err.contains("part 2"), "{err}");
         // Unpadded series up to part10, opened from part10.
-        assert_eq!(
-            volume_set(&tmp.join("e.part10.7z"))
-                .unwrap()
-                .unwrap()
-                .parts
-                .len(),
-            10
-        );
+        assert_eq!(volume_set(&tmp.join("e.part10.7z")).unwrap().unwrap().parts.len(), 10);
         assert!(volume_set(&tmp.join("plain.7z")).unwrap().is_none());
         let f = volume_set(&tmp.join("f.r01")).unwrap().unwrap();
-        assert_eq!(
-            (f.parts.len(), f.scheme, f.logical.as_str()),
-            (3, Scheme::RarOld, "f.rar")
-        );
+        assert_eq!((f.parts.len(), f.scheme, f.logical.as_str()), (3, Scheme::RarOld, "f.rar"));
         assert!(f.parts[0].ends_with("f.rar"));
-        assert_eq!(
-            volume_set(&tmp.join("f.rar")).unwrap().unwrap().parts.len(),
-            3
-        );
+        assert_eq!(volume_set(&tmp.join("f.rar")).unwrap().unwrap().parts.len(), 3);
         let _ = std::fs::remove_dir_all(&tmp);
     }
 }

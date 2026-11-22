@@ -32,27 +32,17 @@ pub fn split_file(path: &Path, part_size: u64, progress: &Progress) -> Result<Ve
     let total = fs::metadata(path)?.len();
     let parts = total.div_ceil(part_size).max(1);
     if parts > 99_999 {
-        return Err(Error::invalid(
-            "volume size too small (more than 99999 parts)",
-        ));
+        return Err(Error::invalid("volume size too small (more than 99999 parts)"));
     }
     let mut r = BufReader::with_capacity(1 << 20, File::open(path)?);
-    let name = path
-        .file_name()
-        .and_then(|n| n.to_str())
-        .ok_or_else(|| Error::invalid("bad file name"))?;
+    let name = path.file_name().and_then(|n| n.to_str()).ok_or_else(|| Error::invalid("bad file name"))?;
     let dir = path.parent().unwrap_or(Path::new("."));
     let mut out = Vec::new();
     let width = if parts > 999 { 5 } else { 3 };
     for i in 1..=parts {
         progress.check()?;
         let p = dir.join(format!("{name}.{i:0width$}"));
-        let mut w = BufWriter::new(
-            fs::OpenOptions::new()
-                .write(true)
-                .create_new(true)
-                .open(&p)?,
-        );
+        let mut w = BufWriter::new(fs::OpenOptions::new().write(true).create_new(true).open(&p)?);
         let n = crate::io::copy_checked(&mut (&mut r).take(part_size), &mut w, progress)?;
         progress.add_done(n);
         w.flush()?;
@@ -63,21 +53,10 @@ pub fn split_file(path: &Path, part_size: u64, progress: &Progress) -> Result<Ve
 
 /// Joins `first` (`x.001`) and the following parts into `output`.
 pub fn combine(first: &Path, output: &Path, progress: &Progress) -> Result<u64> {
-    let parts = crate::source::volume_set(first)?
-        .ok_or_else(|| Error::invalid("this is not a part of a split file"))?
-        .parts;
-    let total: u64 = parts
-        .iter()
-        .filter_map(|p| fs::metadata(p).ok())
-        .map(|m| m.len())
-        .sum();
+    let parts = crate::source::volume_set(first)?.ok_or_else(|| Error::invalid("this is not a part of a split file"))?.parts;
+    let total: u64 = parts.iter().filter_map(|p| fs::metadata(p).ok()).map(|m| m.len()).sum();
     progress.set_total(total);
-    let mut w = BufWriter::new(
-        fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(output)?,
-    );
+    let mut w = BufWriter::new(fs::OpenOptions::new().write(true).create_new(true).open(output)?);
     let mut n = 0;
     for p in parts {
         let mut r = BufReader::new(File::open(&p)?);

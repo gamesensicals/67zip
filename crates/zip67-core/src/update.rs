@@ -9,11 +9,8 @@ use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
-use crate::archive::{EntryVisitor, OpenOptions, open};
-use crate::create::{
-    ArchiveWriter, AtomicOutput, CreateOptions, CreateReport, Item, Method, collect_items,
-    new_writer, write_items,
-};
+use crate::archive::{open, EntryVisitor, OpenOptions};
+use crate::create::{collect_items, new_writer, write_items, ArchiveWriter, AtomicOutput, CreateOptions, CreateReport, Item, Method};
 use crate::detect::Container;
 use crate::entry::{Entry, EntryKind};
 use crate::error::{Error, Result};
@@ -75,11 +72,7 @@ fn item_from_entry(e: &Entry, arcname: String) -> Item {
         size: e.size,
         mtime: e.mtime.unwrap_or(0),
         mtime_nanos: e.mtime_nanos,
-        mode: e.mode.unwrap_or(if e.kind == EntryKind::Dir {
-            0o755
-        } else {
-            0o644
-        }),
+        mode: e.mode.unwrap_or(if e.kind == EntryKind::Dir { 0o755 } else { 0o644 }),
         uid: 0,
         gid: 0,
         link_target: e.link_target.clone(),
@@ -131,32 +124,15 @@ impl EntryVisitor for Rewrite<'_> {
 }
 
 /// Applies `changes` to the archive at `path`.
-pub fn modify(
-    path: &Path,
-    changes: &Changes,
-    opts: &UpdateOptions,
-    progress: &Progress,
-) -> Result<CreateReport> {
-    let mut reader = open(
-        path,
-        &OpenOptions {
-            password: opts.password.clone(),
-            limits: opts.limits.clone(),
-            ..Default::default()
-        },
-    )?;
+pub fn modify(path: &Path, changes: &Changes, opts: &UpdateOptions, progress: &Progress) -> Result<CreateReport> {
+    let mut reader = open(path, &OpenOptions { password: opts.password.clone(), limits: opts.limits.clone(), ..Default::default() })?;
     let t = reader.archive_type();
     if !t.can_update() {
-        return Err(Error::invalid(format!(
-            "{} files cannot be changed; extract and re-create them instead",
-            t.display_name()
-        )));
+        return Err(Error::invalid(format!("{} files cannot be changed; extract and re-create them instead", t.display_name())));
     }
     let info = reader.info();
     if info.volumes > 1 {
-        return Err(Error::invalid(
-            "split (multi-volume) archives cannot be changed",
-        ));
+        return Err(Error::invalid("split (multi-volume) archives cannot be changed"));
     }
     if (info.encrypted_data || info.encrypted_headers) && opts.password.is_none() {
         return Err(Error::PasswordRequired);
@@ -164,20 +140,10 @@ pub fn modify(
     let mut report = CreateReport::default();
     let mut new_items = Vec::new();
     for (src, dir) in &changes.add {
-        new_items.extend(collect_items(
-            std::slice::from_ref(src),
-            dir,
-            opts.follow_symlinks,
-            &opts.exclude,
-            Some(path),
-            &mut report.warnings,
-        )?);
+        new_items.extend(collect_items(std::slice::from_ref(src), dir, opts.follow_symlinks, &opts.exclude, Some(path), &mut report.warnings)?);
     }
     for d in &changes.new_dirs {
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_secs() as i64)
-            .unwrap_or(0);
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0);
         new_items.push(Item {
             arcname: d.trim_matches('/').to_string(),
             kind: EntryKind::Dir,
@@ -192,14 +158,8 @@ pub fn modify(
         });
     }
     let replaced: HashSet<String> = new_items.iter().map(|i| i.arcname.clone()).collect();
-    let deletes: Vec<String> = changes
-        .delete
-        .iter()
-        .map(|d| d.trim_matches('/').to_string())
-        .collect();
-    let keep = |e: &Entry| -> bool {
-        !deletes.iter().any(|d| under(&e.path, d)) && !replaced.contains(&e.path)
-    };
+    let deletes: Vec<String> = changes.delete.iter().map(|d| d.trim_matches('/').to_string()).collect();
+    let keep = |e: &Entry| -> bool { !deletes.iter().any(|d| under(&e.path, d)) && !replaced.contains(&e.path) };
 
     // Same type and compression; old encryption settings are kept.
     let mut copts = CreateOptions {
@@ -207,10 +167,7 @@ pub fn modify(
         level: opts.level.unwrap_or(5),
         method: opts.method,
         threads: opts.threads,
-        password: opts
-            .password
-            .clone()
-            .filter(|_| info.encrypted_data || info.encrypted_headers || t.supports_encryption()),
+        password: opts.password.clone().filter(|_| info.encrypted_data || info.encrypted_headers || t.supports_encryption()),
         encrypt_names: info.encrypted_headers,
         ..Default::default()
     };
@@ -219,18 +176,12 @@ pub fn modify(
         copts.password = None;
     }
     if t.container == Container::SevenZ && copts.method.is_none() {
-        if let Some(m) = info
-            .methods
-            .iter()
-            .find_map(|m| Method::from_name(m.split(':').next().unwrap_or("")))
-        {
+        if let Some(m) = info.methods.iter().find_map(|m| Method::from_name(m.split(':').next().unwrap_or(""))) {
             copts.method = Some(m);
         }
     }
-    let kept_total: u64 =
-        crate::util::total_size(reader.entries().iter().filter(|e| keep(e)).map(|e| e.size));
-    let total =
-        kept_total.saturating_add(crate::util::total_size(new_items.iter().map(|i| i.size)));
+    let kept_total: u64 = crate::util::total_size(reader.entries().iter().filter(|e| keep(e)).map(|e| e.size));
+    let total = kept_total.saturating_add(crate::util::total_size(new_items.iter().map(|i| i.size)));
     progress.set_total(total);
     copts.size_hint = Some(total);
 
@@ -239,11 +190,7 @@ pub fn modify(
     let (out, file) = AtomicOutput::new(&target)?;
     let mut writer = new_writer(file, &copts, None)?;
     {
-        let mut rw = Rewrite {
-            writer: writer.as_mut(),
-            renames: &changes.rename,
-            progress,
-        };
+        let mut rw = Rewrite { writer: writer.as_mut(), renames: &changes.rename, progress };
         reader.extract(&keep, &mut rw, progress)?;
     }
     drop(reader);
@@ -257,28 +204,14 @@ pub fn modify(
 }
 
 /// Adds files to an archive, creating it if it does not exist yet.
-pub fn add_files(
-    archive: &Path,
-    inputs: &[PathBuf],
-    arc_dir: &str,
-    create_opts: &CreateOptions,
-    progress: &Progress,
-) -> Result<CreateReport> {
+pub fn add_files(archive: &Path, inputs: &[PathBuf], arc_dir: &str, create_opts: &CreateOptions, progress: &Progress) -> Result<CreateReport> {
     if !archive.exists() {
         if !arc_dir.is_empty() {
-            return Err(Error::invalid(
-                "cannot add into a folder of an archive that does not exist",
-            ));
+            return Err(Error::invalid("cannot add into a folder of an archive that does not exist"));
         }
         return crate::create::create(archive, inputs, create_opts, progress);
     }
-    let changes = Changes {
-        add: inputs
-            .iter()
-            .map(|p| (p.clone(), arc_dir.to_string()))
-            .collect(),
-        ..Default::default()
-    };
+    let changes = Changes { add: inputs.iter().map(|p| (p.clone(), arc_dir.to_string())).collect(), ..Default::default() };
     let opts = UpdateOptions {
         password: create_opts.password.clone(),
         level: Some(create_opts.level),

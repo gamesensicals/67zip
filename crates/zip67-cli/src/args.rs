@@ -125,11 +125,7 @@ pub fn parse(raw: Vec<String>) -> Result<Args, String> {
         } else if let Some(m) = s.strip_prefix('m') {
             method_switch(&mut a, m)?;
         } else if let Some(p) = s.strip_prefix('p') {
-            a.password = Some(if p.is_empty() {
-                None
-            } else {
-                Some(p.to_string())
-            });
+            a.password = Some(if p.is_empty() { None } else { Some(p.to_string()) });
         } else if let Some(o) = s.strip_prefix('o') {
             if o.is_empty() {
                 return Err("-o needs a folder, written without a space: -o/path/to/folder".into());
@@ -150,11 +146,7 @@ pub fn parse(raw: Vec<String>) -> Result<Args, String> {
         } else if let Some(x) = s.strip_prefix("xr!").or_else(|| s.strip_prefix("x!")) {
             a.exclude.push(x.to_string());
         } else if let Some(h) = lower.strip_prefix("scrc") {
-            a.hashes.push(if h.is_empty() {
-                "crc32".into()
-            } else {
-                h.to_string()
-            });
+            a.hashes.push(if h.is_empty() { "crc32".into() } else { h.to_string() });
         } else if lower == "sdel" {
             a.delete_after = true;
         } else if lower == "sshred" {
@@ -162,22 +154,13 @@ pub fn parse(raw: Vec<String>) -> Result<Args, String> {
             a.shred = true;
         } else if lower == "l" {
             a.follow_links = true;
-        } else if lower == "snl"
-            || lower == "r"
-            || lower == "spf"
-            || lower == "ssc"
-            || lower == "ssc-"
-        {
+        } else if lower == "snl" || lower == "r" || lower == "spf" || lower == "ssc" || lower == "ssc-" {
             // Symlinks are stored as links by default; recursion is always on.
         } else if lower == "slt" {
             a.technical = true;
         } else if lower == "bd" {
             a.no_progress = true;
-        } else if lower.starts_with("bb")
-            || lower.starts_with("bs")
-            || lower.starts_with("bt")
-            || lower.starts_with("sc")
-        {
+        } else if lower.starts_with("bb") || lower.starts_with("bs") || lower.starts_with("bt") || lower.starts_with("sc") {
             // output tuning switches of 7z: accepted and ignored
         } else {
             return Err(format!("unknown switch '{arg}'"));

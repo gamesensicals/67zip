@@ -2,13 +2,13 @@
 
 use std::path::{Path, PathBuf};
 
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
-use std::time::Duration;
 use zip67_core::extract::{ExtractOptions, Overwrite, PathMode, Selection};
 use zip67_core::hash::HashKind;
 use zip67_core::util::{format_local_time, human_size, safe_display};
 use zip67_core::{ArchiveType, Entry, EntryKind, Error, Progress};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use zip67_core::progress::Snapshot;
 use zip67_worker::client::WorkerHandle;
@@ -25,10 +25,7 @@ const EXIT_USAGE: i32 = 7;
 const EXIT_STOPPED: i32 = 255;
 
 fn banner() {
-    println!(
-        "\n67zip {} : MIT license : https://github.com/gamesensicals/67zip\n",
-        zip67_core::VERSION
-    );
+    println!("\n67zip {} : MIT license : https://github.com/gamesensicals/67zip\n", zip67_core::VERSION);
 }
 
 pub fn main(raw: Vec<String>) -> i32 {
@@ -57,30 +54,14 @@ pub fn main(raw: Vec<String>) -> i32 {
             0
         }
         "a" | "u" => add(&a),
-        "d" => update(
-            &a,
-            ChangesSpec {
-                delete: a.files.clone(),
-                ..Default::default()
-            },
-        ),
+        "d" => update(&a, ChangesSpec { delete: a.files.clone(), ..Default::default() }),
         "rn" => {
             if a.files.len() % 2 != 0 || a.files.is_empty() {
                 eprintln!("67z: rn needs pairs of names: old new [old new ...]");
                 return EXIT_USAGE;
             }
-            let pairs = a
-                .files
-                .chunks(2)
-                .map(|c| (c[0].clone(), c[1].clone()))
-                .collect();
-            update(
-                &a,
-                ChangesSpec {
-                    rename: pairs,
-                    ..Default::default()
-                },
-            )
+            let pairs = a.files.chunks(2).map(|c| (c[0].clone(), c[1].clone())).collect();
+            update(&a, ChangesSpec { rename: pairs, ..Default::default() })
         }
         "x" | "e" => extract(&a),
         "l" => list(&a),
@@ -146,10 +127,7 @@ fn in_worker(req: &Request, a: &Args, cancel: &AtomicBool) -> Result<Reply, Erro
     let snap: Arc<Mutex<Snapshot>> = Arc::default();
     let line = {
         let s = snap.clone();
-        ProgressLine::start_with(
-            move || s.lock().map(|x| x.clone()).unwrap_or_default(),
-            !a.no_progress,
-        )
+        ProgressLine::start_with(move || s.lock().map(|x| x.clone()).unwrap_or_default(), !a.no_progress)
     };
     let mut cancel_sent = false;
     let result = loop {
@@ -164,13 +142,7 @@ fn in_worker(req: &Request, a: &Args, cancel: &AtomicBool) -> Result<Reply, Erro
                     *x = s;
                 }
             }
-            Some(Event::Ask(q)) => h.answer(term::ask_overwrite(
-                &q.path,
-                q.existing_size,
-                q.existing_mtime,
-                q.new_size,
-                q.new_mtime,
-            )),
+            Some(Event::Ask(q)) => h.answer(term::ask_overwrite(&q.path, q.existing_size, q.existing_mtime, q.new_size, q.new_mtime)),
             Some(Event::Done(r)) => break Ok(r),
             Some(Event::Failed(f)) => {
                 break Err(match f.kind {
@@ -180,9 +152,7 @@ fn in_worker(req: &Request, a: &Args, cancel: &AtomicBool) -> Result<Reply, Erro
                     _ => Error::InvalidInput(f.message),
                 });
             }
-            None if h.is_finished() => {
-                break Err(Error::invalid("the worker process stopped unexpectedly"));
-            }
+            None if h.is_finished() => break Err(Error::invalid("the worker process stopped unexpectedly")),
             None => std::thread::sleep(Duration::from_millis(15)),
         }
     };
@@ -214,9 +184,7 @@ fn archive_arg(a: &Args) -> Option<PathBuf> {
 }
 
 fn add(a: &Args) -> i32 {
-    let Some(mut archive) = archive_arg(a) else {
-        return EXIT_USAGE;
-    };
+    let Some(mut archive) = archive_arg(a) else { return EXIT_USAGE };
     let t = match &a.archive_type {
         Some(t) => match ArchiveType::from_id(t) {
             Some(t) => t,
@@ -225,20 +193,14 @@ fn add(a: &Args) -> i32 {
                 return EXIT_USAGE;
             }
         },
-        None => {
-            ArchiveType::from_file_name(&archive.to_string_lossy()).unwrap_or(ArchiveType::SEVEN_Z)
-        }
+        None => ArchiveType::from_file_name(&archive.to_string_lossy()).unwrap_or(ArchiveType::SEVEN_Z),
     };
     if archive.extension().is_none() {
         archive.set_extension(t.id());
     }
     let inputs: Vec<PathBuf> = if a.files.is_empty() {
         match std::fs::read_dir(".") {
-            Ok(rd) => rd
-                .filter_map(|e| e.ok())
-                .map(|e| e.path())
-                .filter(|p| p.file_name() != archive.file_name())
-                .collect(),
+            Ok(rd) => rd.filter_map(|e| e.ok()).map(|e| e.path()).filter(|p| p.file_name() != archive.file_name()).collect(),
             Err(e) => return fail(&e.into()),
         }
     } else {
@@ -254,11 +216,7 @@ fn add(a: &Args) -> i32 {
         }
         password = Some(Some(p1));
     }
-    let method = match a
-        .method
-        .as_deref()
-        .map(|m| zip67_core::create::Method::from_name(m).ok_or(m))
-    {
+    let method = match a.method.as_deref().map(|m| zip67_core::create::Method::from_name(m).ok_or(m)) {
         Some(Err(m)) => {
             eprintln!("67z: unknown method '{m}'");
             return EXIT_USAGE;
@@ -282,42 +240,20 @@ fn add(a: &Args) -> i32 {
         exclude: a.exclude.clone(),
     };
     println!("Archive: {}", safe_display(&archive.to_string_lossy()));
-    let a2 = Args {
-        password: None,
-        ..clone_args(a)
-    };
-    let res = run(&a2, |_| Request::AddFiles {
-        archive: archive.clone(),
-        inputs: inputs.clone(),
-        arc_dir: String::new(),
-        spec: spec.clone(),
-    });
+    let a2 = Args { password: None, ..clone_args(a) };
+    let res = run(&a2, |_| Request::AddFiles { archive: archive.clone(), inputs: inputs.clone(), arc_dir: String::new(), spec: spec.clone() });
     match res {
         Ok(Reply::Created(r)) => {
             for w in &r.warnings {
                 eprintln!("WARNING: {}", safe_display(w));
             }
-            let ratio = if r.bytes_in > 0 {
-                100.0 * r.bytes_out as f64 / r.bytes_in as f64
-            } else {
-                0.0
-            };
-            println!(
-                "Files: {}  Folders: {}  Size: {}  Archive: {} ({ratio:.1}%)",
-                r.files,
-                r.dirs,
-                human_size(r.bytes_in),
-                human_size(r.bytes_out)
-            );
+            let ratio = if r.bytes_in > 0 { 100.0 * r.bytes_out as f64 / r.bytes_in as f64 } else { 0.0 };
+            println!("Files: {}  Folders: {}  Size: {}  Archive: {} ({ratio:.1}%)", r.files, r.dirs, human_size(r.bytes_in), human_size(r.bytes_out));
             for o in &r.outputs {
                 println!("Written: {}", safe_display(&o.to_string_lossy()));
             }
             println!("Everything is Ok");
-            if r.warnings.is_empty() {
-                0
-            } else {
-                EXIT_WARNING
-            }
+            if r.warnings.is_empty() { 0 } else { EXIT_WARNING }
         }
         Ok(_) => EXIT_FATAL,
         Err(e) => fail(&e),
@@ -339,16 +275,8 @@ fn clone_args(a: &Args) -> Args {
 }
 
 fn update(a: &Args, changes: ChangesSpec) -> i32 {
-    let Some(archive) = archive_arg(a) else {
-        return EXIT_USAGE;
-    };
-    let res = run(a, |pw| Request::Update {
-        archive: archive.clone(),
-        password: pw,
-        changes: changes.clone(),
-        level: a.level,
-        threads: a.threads.unwrap_or(0),
-    });
+    let Some(archive) = archive_arg(a) else { return EXIT_USAGE };
+    let res = run(a, |pw| Request::Update { archive: archive.clone(), password: pw, changes: changes.clone(), level: a.level, threads: a.threads.unwrap_or(0) });
     match res {
         Ok(Reply::Created(_)) => {
             println!("Everything is Ok");
@@ -368,32 +296,12 @@ fn selection(files: &[String]) -> Selection {
 }
 
 fn extract(a: &Args) -> i32 {
-    let Some(archive) = archive_arg(a) else {
-        return EXIT_USAGE;
-    };
+    let Some(archive) = archive_arg(a) else { return EXIT_USAGE };
     let dest = a.output.clone().unwrap_or_else(|| PathBuf::from("."));
-    let overwrite = if a.yes {
-        Overwrite::Always
-    } else {
-        a.overwrite.unwrap_or(Overwrite::Ask)
-    };
-    let options = ExtractOptions {
-        path_mode: if a.command == "e" {
-            PathMode::Flat
-        } else {
-            PathMode::Full
-        },
-        overwrite,
-        ..Default::default()
-    };
+    let overwrite = if a.yes { Overwrite::Always } else { a.overwrite.unwrap_or(Overwrite::Ask) };
+    let options = ExtractOptions { path_mode: if a.command == "e" { PathMode::Flat } else { PathMode::Full }, overwrite, ..Default::default() };
     let sel = selection(&a.files);
-    let res = run(a, |pw| Request::Extract {
-        archive: archive.clone(),
-        password: pw,
-        dest: dest.clone(),
-        selection: sel.clone(),
-        options: options.clone(),
-    });
+    let res = run(a, |pw| Request::Extract { archive: archive.clone(), password: pw, dest: dest.clone(), selection: sel.clone(), options: options.clone() });
     match res {
         Ok(Reply::Extracted(r)) => report_extract(&r, "Extracted"),
         Ok(_) => EXIT_FATAL,
@@ -408,23 +316,13 @@ fn report_extract(r: &zip67_core::extract::ExtractReport, verb: &str) -> i32 {
     for (p, e) in &r.errors {
         eprintln!("ERROR: {} : {}", safe_display(p), safe_display(e));
     }
-    println!(
-        "{verb}: {} files, {} folders, {} links, {}",
-        r.files,
-        r.dirs,
-        r.links,
-        human_size(r.bytes)
-    );
+    println!("{verb}: {} files, {} folders, {} links, {}", r.files, r.dirs, r.links, human_size(r.bytes));
     if r.skipped > 0 {
         println!("Skipped: {}", r.skipped);
     }
     if r.errors.is_empty() {
         println!("Everything is Ok");
-        if r.warnings.is_empty() {
-            0
-        } else {
-            EXIT_WARNING
-        }
+        if r.warnings.is_empty() { 0 } else { EXIT_WARNING }
     } else {
         println!("Errors: {}", r.errors.len());
         EXIT_FATAL
@@ -432,15 +330,9 @@ fn report_extract(r: &zip67_core::extract::ExtractReport, verb: &str) -> i32 {
 }
 
 fn test(a: &Args) -> i32 {
-    let Some(archive) = archive_arg(a) else {
-        return EXIT_USAGE;
-    };
+    let Some(archive) = archive_arg(a) else { return EXIT_USAGE };
     let sel = selection(&a.files);
-    match run(a, |pw| Request::Test {
-        archive: archive.clone(),
-        password: pw,
-        selection: sel.clone(),
-    }) {
+    match run(a, |pw| Request::Test { archive: archive.clone(), password: pw, selection: sel.clone() }) {
         Ok(Reply::Tested(r)) => report_extract(&r, "Tested"),
         Ok(_) => EXIT_FATAL,
         Err(e) => fail(&e),
@@ -464,34 +356,16 @@ fn attr(e: &Entry) -> &'static str {
 }
 
 fn list(a: &Args) -> i32 {
-    let Some(archive) = archive_arg(a) else {
-        return EXIT_USAGE;
-    };
-    let res = run(
-        &Args {
-            no_progress: true,
-            ..clone_args(a)
-        },
-        |pw| Request::List {
-            archive: archive.clone(),
-            password: pw,
-        },
-    );
+    let Some(archive) = archive_arg(a) else { return EXIT_USAGE };
+    let res = run(&Args { no_progress: true, ..clone_args(a) }, |pw| Request::List { archive: archive.clone(), password: pw });
     let (t, entries, info) = match res {
-        Ok(Reply::Listing {
-            archive_type,
-            entries,
-            info,
-        }) => (archive_type, entries, info),
+        Ok(Reply::Listing { archive_type, entries, info }) => (archive_type, entries, info),
         Ok(_) => return EXIT_FATAL,
         Err(e) => return fail(&e),
     };
     let matcher = selection(&a.files).matcher();
     let entries: Vec<&Entry> = entries.iter().filter(|e| matcher(e)).collect();
-    println!(
-        "Listing archive: {}\n",
-        safe_display(&archive.to_string_lossy())
-    );
+    println!("Listing archive: {}\n", safe_display(&archive.to_string_lossy()));
     println!("--");
     println!("Path = {}", safe_display(&archive.to_string_lossy()));
     println!("Type = {t}");
@@ -556,22 +430,9 @@ fn list(a: &Args) -> i32 {
     let (mut files, mut dirs, mut size, mut packed) = (0u64, 0u64, 0u64, 0u64);
     let mut newest = None::<i64>;
     for e in &entries {
-        let date = e
-            .mtime
-            .map(format_local_time)
-            .unwrap_or_else(|| " ".repeat(19));
+        let date = e.mtime.map(format_local_time).unwrap_or_else(|| " ".repeat(19));
         let p = e.packed_size.map(|p| p.to_string()).unwrap_or_default();
-        println!(
-            "{date} {} {:>12} {:>12}  {}",
-            attr(e),
-            if e.size_known {
-                e.size.to_string()
-            } else {
-                String::new()
-            },
-            p,
-            safe_display(&e.path)
-        );
+        println!("{date} {} {:>12} {:>12}  {}", attr(e), if e.size_known { e.size.to_string() } else { String::new() }, p, safe_display(&e.path));
         if e.is_dir() {
             dirs += 1;
         } else {
@@ -582,9 +443,7 @@ fn list(a: &Args) -> i32 {
         newest = newest.max(e.mtime);
     }
     println!("------------------- ----- ------------ ------------  ------------------------");
-    let date = newest
-        .map(format_local_time)
-        .unwrap_or_else(|| " ".repeat(19));
+    let date = newest.map(format_local_time).unwrap_or_else(|| " ".repeat(19));
     println!("{date}       {size:>12} {packed:>12}  {files} files, {dirs} folders");
     0
 }
@@ -639,43 +498,22 @@ fn hash(a: &Args) -> i32 {
         v
     };
     let files = collect_files(&names);
-    let res = run(a, |_| Request::Hash {
-        paths: files.clone(),
-        kinds: kinds.clone(),
-    });
+    let res = run(a, |_| Request::Hash { paths: files.clone(), kinds: kinds.clone() });
     match res {
         Ok(Reply::Hashes(v)) => {
             let mut bad = 0;
             let mut total = 0u64;
             for r in &v {
                 if let Some(e) = &r.error {
-                    eprintln!(
-                        "ERROR: {} : {}",
-                        safe_display(&r.path.to_string_lossy()),
-                        safe_display(e)
-                    );
+                    eprintln!("ERROR: {} : {}", safe_display(&r.path.to_string_lossy()), safe_display(e));
                     bad += 1;
                     continue;
                 }
                 total = total.saturating_add(r.size);
                 let vals: Vec<String> = r.values.iter().map(|(_, h)| h.clone()).collect();
-                println!(
-                    "{}  {:>12}  {}",
-                    vals.join("  "),
-                    r.size,
-                    safe_display(&r.path.to_string_lossy())
-                );
+                println!("{}  {:>12}  {}", vals.join("  "), r.size, safe_display(&r.path.to_string_lossy()));
             }
-            println!(
-                "\nFiles: {}  Size: {}  ({})",
-                v.len() - bad,
-                total,
-                kinds
-                    .iter()
-                    .map(|k| k.name())
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            );
+            println!("\nFiles: {}  Size: {}  ({})", v.len() - bad, total, kinds.iter().map(|k| k.name()).collect::<Vec<_>>().join(", "));
             if bad == 0 { 0 } else { EXIT_FATAL }
         }
         Ok(_) => EXIT_FATAL,
@@ -684,26 +522,13 @@ fn hash(a: &Args) -> i32 {
 }
 
 fn bench(a: &Args) -> i32 {
-    let threads = a
-        .threads
-        .filter(|&t| t > 0)
-        .unwrap_or_else(zip67_core::util::default_threads);
+    let threads = a.threads.filter(|&t| t > 0).unwrap_or_else(zip67_core::util::default_threads);
     println!("Benchmark with {threads} threads on 64 MB of sample data...\n");
-    match run(a, |_| Request::Benchmark {
-        seconds: 8,
-        threads,
-        dict_size: 0,
-    }) {
+    match run(a, |_| Request::Benchmark { seconds: 8, threads, dict_size: 0 }) {
         Ok(Reply::Benchmark(v)) => {
-            println!(
-                "{:<18} {:>7} {:>14} {:>16} {:>8}",
-                "Method", "Threads", "Compress MB/s", "Decompress MB/s", "Ratio"
-            );
+            println!("{:<18} {:>7} {:>14} {:>16} {:>8}", "Method", "Threads", "Compress MB/s", "Decompress MB/s", "Ratio");
             for r in v {
-                println!(
-                    "{:<18} {:>7} {:>14.1} {:>16.1} {:>7.1}%",
-                    r.method, r.threads, r.compress_mbps, r.decompress_mbps, r.ratio
-                );
+                println!("{:<18} {:>7} {:>14.1} {:>16.1} {:>7.1}%", r.method, r.threads, r.compress_mbps, r.decompress_mbps, r.ratio);
             }
             0
         }
@@ -716,55 +541,23 @@ fn info() {
     println!("Formats:");
     println!("  {:<9} {:<6} {:<10} Notes", "Type", "Read", "Write");
     let rows: &[(&str, &str, &str, &str)] = &[
-        (
-            "7z",
-            "yes",
-            "yes",
-            "LZMA2/LZMA/PPMd/BZip2/Deflate/Copy, BCJ/BCJ2/ARM64/Delta, AES-256",
-        ),
-        (
-            "zip",
-            "yes",
-            "yes",
-            "Deflate/BZip2/LZMA/XZ/Zstd/PPMd(read)/Store, Zip64, AES-256; ZipCrypto read-only",
-        ),
+        ("7z", "yes", "yes", "LZMA2/LZMA/PPMd/BZip2/Deflate/Copy, BCJ/BCJ2/ARM64/Delta, AES-256"),
+        ("zip", "yes", "yes", "Deflate/BZip2/LZMA/XZ/Zstd/PPMd(read)/Store, Zip64, AES-256; ZipCrypto read-only"),
         ("tar", "yes", "yes", "ustar, PAX, GNU long names"),
         ("tar.gz", "yes", "yes", "also .tgz"),
         ("tar.bz2", "yes", "yes", "also .tbz2"),
         ("tar.xz", "yes", "yes", "also .txz"),
-        (
-            "tar.zst",
-            "yes",
-            "yes",
-            "Zstandard (fast level only for writing)",
-        ),
+        ("tar.zst", "yes", "yes", "Zstandard (fast level only for writing)"),
         ("tar.lz", "yes", "yes", "lzip"),
         ("gz bz2", "yes", "yes", "single files"),
         ("xz zst", "yes", "yes", "single files"),
         ("lzma lz", "yes", "yes", "single files"),
         ("iso", "yes", "no", "ISO 9660, Rock Ridge, Joliet"),
-        (
-            "rar",
-            "yes",
-            "no",
-            "RAR5 and RAR 2.0-4.x: solid, volumes, AES, self-extracting; not RAR 1.5 or RAR 2.0 encryption",
-        ),
-        (
-            "split",
-            "yes",
-            "yes",
-            "any format split into parts: .001, .part1.7z, .7z.part1, .z01 ... .zip, .part1.rar, .r00, .aa",
-        ),
+        ("rar", "yes", "no", "RAR5 and RAR 2.0-4.x: solid, volumes, AES, self-extracting; not RAR 1.5 or RAR 2.0 encryption"),
+        ("split", "yes", "yes", "any format split into parts: .001, .part1.7z, .7z.part1, .z01 ... .zip, .part1.rar, .r00, .aa"),
     ];
     for (t, r, w, n) in rows {
         println!("  {t:<9} {r:<6} {w:<10} {n}");
     }
-    println!(
-        "\nHashes: {}",
-        HashKind::ALL
-            .iter()
-            .map(|k| k.name())
-            .collect::<Vec<_>>()
-            .join(", ")
-    );
+    println!("\nHashes: {}", HashKind::ALL.iter().map(|k| k.name()).collect::<Vec<_>>().join(", "));
 }

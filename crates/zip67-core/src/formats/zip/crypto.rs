@@ -28,10 +28,7 @@ impl ZipCryptoKeys {
     fn update(&mut self, b: u8) {
         let k = &mut self.0;
         k[0] = crc32_byte(k[0], b);
-        k[1] = k[1]
-            .wrapping_add(k[0] & 0xff)
-            .wrapping_mul(134_775_813)
-            .wrapping_add(1);
+        k[1] = k[1].wrapping_add(k[0] & 0xff).wrapping_mul(134_775_813).wrapping_add(1);
         k[2] = crc32_byte(k[2], (k[1] >> 24) as u8);
     }
     fn stream_byte(&self) -> u8 {
@@ -91,17 +88,12 @@ fn aes_key_len(strength: u8) -> usize {
 }
 
 /// Derives (cipher, mac, password verifier) as specified by WinZip.
-fn aes_derive(
-    password: &Password,
-    salt: &[u8],
-    strength: u8,
-) -> Result<(CtrLe, Hmac<Sha1>, [u8; 2])> {
+fn aes_derive(password: &Password, salt: &[u8], strength: u8) -> Result<(CtrLe, Hmac<Sha1>, [u8; 2])> {
     let kl = aes_key_len(strength);
     let mut out = Zeroizing::new(vec![0u8; 2 * kl + 2]);
     pbkdf2::pbkdf2_hmac::<Sha1>(password.as_bytes(), salt, 1000, &mut out);
     let ctr = CtrLe::new(AesKey::new(&out[..kl])?);
-    let mac = <Hmac<Sha1> as KeyInit>::new_from_slice(&out[kl..2 * kl])
-        .map_err(|_| Error::invalid("hmac key"))?;
+    let mac = <Hmac<Sha1> as KeyInit>::new_from_slice(&out[kl..2 * kl]).map_err(|_| Error::invalid("hmac key"))?;
     Ok((ctr, mac, [out[2 * kl], out[2 * kl + 1]]))
 }
 
@@ -124,20 +116,13 @@ impl<R: Read> AesZipReader<R> {
         if verifier != expect {
             return Err(Error::WrongPassword);
         }
-        Ok(AesZipReader {
-            inner: Some(crate::io::TakeExact::new(raw, data_len)),
-            tail: None,
-            ctr,
-            mac: Some(mac),
-        })
+        Ok(AesZipReader { inner: Some(crate::io::TakeExact::new(raw, data_len)), tail: None, ctr, mac: Some(mac) })
     }
 }
 
 impl<R: Read> Read for AesZipReader<R> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        let Some(inner) = self.inner.as_mut() else {
-            return Ok(0);
-        };
+        let Some(inner) = self.inner.as_mut() else { return Ok(0) };
         let n = inner.read(buf)?;
         if n > 0 {
             if let Some(m) = self.mac.as_mut() {
@@ -156,11 +141,8 @@ impl<R: Read> Read for AesZipReader<R> {
         raw.read_exact(&mut tag)?;
         self.tail = Some(raw);
         let mac = self.mac.take().expect("mac present");
-        mac.verify_truncated_left(&tag).map_err(|_| {
-            io::Error::from(Error::corrupt(
-                "AES authentication failed (data was modified or damaged)",
-            ))
-        })?;
+        mac.verify_truncated_left(&tag)
+            .map_err(|_| io::Error::from(Error::corrupt("AES authentication failed (data was modified or damaged)")))?;
         Ok(0)
     }
 }
@@ -181,12 +163,7 @@ impl<W: Write> AesZipWriter<W> {
         let (ctr, mac, verifier) = aes_derive(password, &salt, 3)?;
         inner.write_all(&salt)?;
         inner.write_all(&verifier)?;
-        Ok(AesZipWriter {
-            inner,
-            ctr,
-            mac,
-            buf: Vec::new(),
-        })
+        Ok(AesZipWriter { inner, ctr, mac, buf: Vec::new() })
     }
     pub fn finish(mut self) -> Result<W> {
         let tag = self.mac.finalize().into_bytes();

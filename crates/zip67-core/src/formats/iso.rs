@@ -5,7 +5,7 @@
 use std::collections::HashSet;
 use std::io::{Read, SeekFrom};
 
-use crate::archive::{ArchiveInfo, ArchiveReader, EntryVisitor, OpenOptions, is_entry_local};
+use crate::archive::{is_entry_local, ArchiveInfo, ArchiveReader, EntryVisitor, OpenOptions};
 use crate::detect::ArchiveType;
 use crate::entry::{Entry, EntryKind};
 use crate::error::{Error, Result};
@@ -37,22 +37,9 @@ fn iso_time(b: &[u8]) -> Option<i64> {
     if b.len() < 7 || b[1] == 0 {
         return None;
     }
-    let dt = jiff::civil::DateTime::new(
-        1900 + i16::from(b[0]),
-        b[1] as i8,
-        b[2] as i8,
-        b[3] as i8,
-        b[4] as i8,
-        b[5] as i8,
-        0,
-    )
-    .ok()?;
+    let dt = jiff::civil::DateTime::new(1900 + i16::from(b[0]), b[1] as i8, b[2] as i8, b[3] as i8, b[4] as i8, b[5] as i8, 0).ok()?;
     let offset_secs = i32::from(b[6] as i8) * 15 * 60;
-    let ts = dt
-        .to_zoned_datetime(jiff::tz::TimeZone::UTC)
-        .ok()?
-        .timestamp()
-        .as_second();
+    let ts = dt.to_zoned_datetime(jiff::tz::TimeZone::UTC).ok()?.timestamp().as_second();
     Some(ts - i64::from(offset_secs))
 }
 
@@ -63,10 +50,7 @@ fn plain_name(raw: &[u8]) -> String {
 }
 
 fn joliet_name(raw: &[u8]) -> String {
-    let units: Vec<u16> = raw
-        .chunks_exact(2)
-        .map(|c| u16::from_be_bytes([c[0], c[1]]))
-        .collect();
+    let units: Vec<u16> = raw.chunks_exact(2).map(|c| u16::from_be_bytes([c[0], c[1]])).collect();
     let s = String::from_utf16_lossy(&units);
     s.split(';').next().unwrap_or("").to_string()
 }
@@ -144,11 +128,7 @@ fn rock_ridge(mut su: &[u8], rec: &mut Rec) {
     }
     if !link_parts.is_empty() {
         let joined = link_parts.join("/");
-        rec.link = Some(if joined.is_empty() {
-            "/".into()
-        } else {
-            joined
-        });
+        rec.link = Some(if joined.is_empty() { "/".into() } else { joined });
     }
 }
 
@@ -169,10 +149,7 @@ fn parse_record(r: &[u8], joliet: bool) -> Option<Rec> {
         plain_name(raw)
     };
     let mut rec = Rec {
-        extent: Extent {
-            lba: u32::from_le_bytes([r[2], r[3], r[4], r[5]]),
-            len: u32::from_le_bytes([r[10], r[11], r[12], r[13]]),
-        },
+        extent: Extent { lba: u32::from_le_bytes([r[2], r[3], r[4], r[5]]), len: u32::from_le_bytes([r[10], r[11], r[12], r[13]]) },
         is_dir: r[25] & 2 != 0,
         multi: r[25] & 0x80 != 0,
         name,
@@ -219,39 +196,22 @@ impl IsoReader {
             }
             match d[0] {
                 1 if pvd_root.is_none() => pvd_root = Some(d[156..190].to_vec()),
-                2 if &d[88..90] == b"%/" && matches!(d[90], b'@' | b'C' | b'E') => {
-                    joliet_root = Some(d[156..190].to_vec())
-                }
+                2 if &d[88..90] == b"%/" && matches!(d[90], b'@' | b'C' | b'E') => joliet_root = Some(d[156..190].to_vec()),
                 255 => break,
                 _ => {}
             }
         }
-        let pvd =
-            pvd_root.ok_or_else(|| Error::corrupt("ISO without primary volume descriptor"))?;
-        let root =
-            parse_record(&pvd, false).ok_or_else(|| Error::corrupt("bad ISO root record"))?;
+        let pvd = pvd_root.ok_or_else(|| Error::corrupt("ISO without primary volume descriptor"))?;
+        let root = parse_record(&pvd, false).ok_or_else(|| Error::corrupt("bad ISO root record"))?;
         // Rock Ridge is announced in the root's "." record.
-        let first = Self::read_at(
-            src.as_mut(),
-            size,
-            u64::from(root.extent.lba) * SECTOR,
-            SECTOR as usize,
-        )?;
+        let first = Self::read_at(src.as_mut(), size, u64::from(root.extent.lba) * SECTOR, SECTOR as usize)?;
         let has_rr = {
             let dot = parse_record(&first[..usize::from(first[0]).min(first.len())], false);
-            dot.is_some()
-                && first
-                    .windows(2)
-                    .take(usize::from(first[0]))
-                    .any(|w| w == b"SP" || w == b"RR" || w == b"PX")
+            dot.is_some() && first.windows(2).take(usize::from(first[0])).any(|w| w == b"SP" || w == b"RR" || w == b"PX")
         };
         let (use_joliet, root_rec, kind) = match (&joliet_root, has_rr) {
             (_, true) => (false, root, "ISO 9660 + Rock Ridge"),
-            (Some(j), false) => (
-                true,
-                parse_record(j, true).ok_or_else(|| Error::corrupt("bad Joliet root"))?,
-                "ISO 9660 + Joliet",
-            ),
+            (Some(j), false) => (true, parse_record(j, true).ok_or_else(|| Error::corrupt("bad Joliet root"))?, "ISO 9660 + Joliet"),
             (None, false) => (false, root, "ISO 9660"),
         };
 
@@ -269,12 +229,7 @@ impl IsoReader {
             if u64::from(ext.len) > limits.max_header_size.min(64 << 20) {
                 return Err(Error::limit("ISO directory too large"));
             }
-            let data = Self::read_at(
-                src.as_mut(),
-                size,
-                u64::from(ext.lba) * SECTOR,
-                ext.len as usize,
-            )?;
+            let data = Self::read_at(src.as_mut(), size, u64::from(ext.lba) * SECTOR, ext.len as usize)?;
             let mut off = 0usize;
             let mut pending_multi: Option<usize> = None;
             while off < data.len() {
@@ -287,9 +242,7 @@ impl IsoReader {
                 if off + len > data.len() {
                     break;
                 }
-                let Some(rec) = parse_record(&data[off..off + len], use_joliet) else {
-                    break;
-                };
+                let Some(rec) = parse_record(&data[off..off + len], use_joliet) else { break };
                 off += len;
                 if rec.name.is_empty() && rec.rr_name.is_none() {
                     continue; // "." and ".."
@@ -298,18 +251,10 @@ impl IsoReader {
                 if name == "." || name == ".." || name.contains('/') || name.is_empty() {
                     continue;
                 }
-                let path = if prefix.is_empty() {
-                    name.clone()
-                } else {
-                    format!("{prefix}/{name}")
-                };
+                let path = if prefix.is_empty() { name.clone() } else { format!("{prefix}/{name}") };
                 if let Some(i) = pending_multi.take() {
                     // Further extents of a multi-extent file.
-                    if entries
-                        .get(i)
-                        .map(|e: &Entry| e.path == path)
-                        .unwrap_or(false)
-                    {
+                    if entries.get(i).map(|e: &Entry| e.path == path).unwrap_or(false) {
                         extents[i].push(rec.extent.clone());
                         entries[i].size += u64::from(rec.extent.len);
                         if rec.multi {
@@ -347,22 +292,11 @@ impl IsoReader {
                 if rec.multi {
                     pending_multi = Some(entries.len());
                 }
-                extents.push(if kind == EntryKind::File {
-                    vec![rec.extent]
-                } else {
-                    vec![]
-                });
+                extents.push(if kind == EntryKind::File { vec![rec.extent] } else { vec![] });
                 entries.push(e);
             }
         }
-        Ok(IsoReader {
-            src,
-            size,
-            entries,
-            extents,
-            limits,
-            kind,
-        })
+        Ok(IsoReader { src, size, entries, extents, limits, kind })
     }
 }
 
@@ -374,24 +308,11 @@ impl ArchiveReader for IsoReader {
         &self.entries
     }
     fn info(&self) -> ArchiveInfo {
-        ArchiveInfo {
-            format: "iso".into(),
-            physical_size: self.size,
-            methods: vec![self.kind.into()],
-            volumes: 1,
-            ..Default::default()
-        }
+        ArchiveInfo { format: "iso".into(), physical_size: self.size, methods: vec![self.kind.into()], volumes: 1, ..Default::default() }
     }
-    fn extract(
-        &mut self,
-        selected: &dyn Fn(&Entry) -> bool,
-        visitor: &mut dyn EntryVisitor,
-        progress: &Progress,
-    ) -> Result<()> {
+    fn extract(&mut self, selected: &dyn Fn(&Entry) -> bool, visitor: &mut dyn EntryVisitor, progress: &Progress) -> Result<()> {
         let _ = &self.limits;
-        let mut order: Vec<usize> = (0..self.entries.len())
-            .filter(|&i| selected(&self.entries[i]))
-            .collect();
+        let mut order: Vec<usize> = (0..self.entries.len()).filter(|&i| selected(&self.entries[i])).collect();
         order.sort_by_key(|&i| self.extents[i].first().map(|e| e.lba).unwrap_or(0));
         for i in order {
             progress.check()?;
@@ -399,26 +320,15 @@ impl ArchiveReader for IsoReader {
             progress.set_current(&entry.path);
             let res = match entry.kind {
                 EntryKind::Dir => visitor.dir(entry),
-                EntryKind::Symlink => {
-                    visitor.symlink(entry, entry.link_target.as_deref().unwrap_or(""))
-                }
+                EntryKind::Symlink => visitor.symlink(entry, entry.link_target.as_deref().unwrap_or("")),
                 EntryKind::File => {
                     let size = self.size;
-                    let outside = self.extents[i].iter().any(|ext| {
-                        (u64::from(ext.lba) * SECTOR)
-                            .checked_add(u64::from(ext.len))
-                            .is_none_or(|e| e > size)
-                    });
+                    let outside = self.extents[i].iter().any(|ext| (u64::from(ext.lba) * SECTOR).checked_add(u64::from(ext.len)).is_none_or(|e| e > size));
                     if outside {
                         Err(Error::corrupt("file data lies outside the image"))
                     } else {
                         let exts = self.extents[i].clone();
-                        let mut chain = ExtentChain {
-                            src: self.src.as_mut(),
-                            exts,
-                            idx: 0,
-                            done_in_ext: 0,
-                        };
+                        let mut chain = ExtentChain { src: self.src.as_mut(), exts, idx: 0, done_in_ext: 0 };
                         let mut p = Progressed::new(&mut chain, progress);
                         visitor.file(entry, &mut p)
                     }
@@ -453,9 +363,7 @@ impl Read for ExtentChain<'_> {
                 self.done_in_ext = 0;
                 continue;
             }
-            self.src.seek(SeekFrom::Start(
-                u64::from(ext.lba) * SECTOR + self.done_in_ext,
-            ))?;
+            self.src.seek(SeekFrom::Start(u64::from(ext.lba) * SECTOR + self.done_in_ext))?;
             let n = buf.len().min(left.min(usize::MAX as u64) as usize);
             let got = self.src.read(&mut buf[..n])?;
             if got == 0 {

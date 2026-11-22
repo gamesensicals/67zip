@@ -3,12 +3,12 @@
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
-use zip67_core::Entry;
 use zip67_core::archive::ArchiveInfo;
 use zip67_core::create::{CreateReport, Method};
 use zip67_core::extract::{Answer, ExtractOptions, ExtractReport, Selection};
 use zip67_core::hash::HashKind;
 use zip67_core::progress::Snapshot;
+use zip67_core::Entry;
 
 use crate::sandbox::SandboxStatus;
 
@@ -54,24 +54,15 @@ impl Default for CreateSpec {
 
 impl CreateSpec {
     pub fn to_options(&self) -> zip67_core::Result<zip67_core::create::CreateOptions> {
-        let t = zip67_core::ArchiveType::from_id(&self.archive_type).ok_or_else(|| {
-            zip67_core::Error::invalid(format!("unknown archive type {}", self.archive_type))
-        })?;
+        let t = zip67_core::ArchiveType::from_id(&self.archive_type)
+            .ok_or_else(|| zip67_core::Error::invalid(format!("unknown archive type {}", self.archive_type)))?;
         Ok(zip67_core::create::CreateOptions {
             archive_type: t,
             level: self.level.min(9),
             method: self.method,
             dict_size: self.dict_size,
-            threads: if self.threads == 0 {
-                zip67_core::util::default_threads()
-            } else {
-                self.threads
-            },
-            password: self
-                .password
-                .clone()
-                .filter(|p| !p.is_empty())
-                .map(zip67_core::Password::new),
+            threads: if self.threads == 0 { zip67_core::util::default_threads() } else { self.threads },
+            password: self.password.clone().filter(|p| !p.is_empty()).map(zip67_core::Password::new),
             encrypt_names: self.encrypt_names,
             solid: self.solid,
             volume_size: self.volume_size,
@@ -95,49 +86,14 @@ pub struct ChangesSpec {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum Request {
-    List {
-        archive: PathBuf,
-        password: Option<String>,
-    },
-    Extract {
-        archive: PathBuf,
-        password: Option<String>,
-        dest: PathBuf,
-        selection: Selection,
-        options: ExtractOptions,
-    },
-    Test {
-        archive: PathBuf,
-        password: Option<String>,
-        selection: Selection,
-    },
-    Create {
-        output: PathBuf,
-        inputs: Vec<PathBuf>,
-        spec: CreateSpec,
-    },
-    AddFiles {
-        archive: PathBuf,
-        inputs: Vec<PathBuf>,
-        arc_dir: String,
-        spec: CreateSpec,
-    },
-    Update {
-        archive: PathBuf,
-        password: Option<String>,
-        changes: ChangesSpec,
-        level: Option<u32>,
-        threads: usize,
-    },
-    Hash {
-        paths: Vec<PathBuf>,
-        kinds: Vec<HashKind>,
-    },
-    Benchmark {
-        seconds: u32,
-        threads: usize,
-        dict_size: u32,
-    },
+    List { archive: PathBuf, password: Option<String> },
+    Extract { archive: PathBuf, password: Option<String>, dest: PathBuf, selection: Selection, options: ExtractOptions },
+    Test { archive: PathBuf, password: Option<String>, selection: Selection },
+    Create { output: PathBuf, inputs: Vec<PathBuf>, spec: CreateSpec },
+    AddFiles { archive: PathBuf, inputs: Vec<PathBuf>, arc_dir: String, spec: CreateSpec },
+    Update { archive: PathBuf, password: Option<String>, changes: ChangesSpec, level: Option<u32>, threads: usize },
+    Hash { paths: Vec<PathBuf>, kinds: Vec<HashKind> },
+    Benchmark { seconds: u32, threads: usize, dict_size: u32 },
 }
 
 /// What the client sends first: the request, and for requests that write
@@ -178,11 +134,7 @@ pub struct HashResult {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum Reply {
-    Listing {
-        archive_type: String,
-        entries: Vec<Entry>,
-        info: ArchiveInfo,
-    },
+    Listing { archive_type: String, entries: Vec<Entry>, info: ArchiveInfo },
     Extracted(ExtractReport),
     Tested(ExtractReport),
     Created(CreateReport),
@@ -224,19 +176,13 @@ impl From<&zip67_core::Error> for Failure {
             E::Io(_) => FailKind::Io,
             E::InvalidInput(_) => FailKind::Invalid,
         };
-        Failure {
-            kind,
-            message: e.to_string(),
-        }
+        Failure { kind, message: e.to_string() }
     }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum Event {
-    Hello {
-        version: String,
-        sandbox: SandboxStatus,
-    },
+    Hello { version: String, sandbox: SandboxStatus },
     Progress(Snapshot),
     Ask(Question),
     Done(Reply),

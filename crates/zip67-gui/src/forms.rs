@@ -27,9 +27,7 @@ pub const FORMATS: [Format; 11] = [
 
 impl fmt::Display for Format {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let t = zip67_core::ArchiveType::from_id(self.0)
-            .map(|t| t.display_name())
-            .unwrap_or_default();
+        let t = zip67_core::ArchiveType::from_id(self.0).map(|t| t.display_name()).unwrap_or_default();
         write!(f, "{t}  (.{})", self.0)
     }
 }
@@ -151,8 +149,7 @@ pub struct AddForm {
 
 impl AddForm {
     pub fn methods(&self) -> Vec<MethodChoice> {
-        let t = zip67_core::ArchiveType::from_id(self.format.0)
-            .unwrap_or(zip67_core::ArchiveType::SEVEN_Z);
+        let t = zip67_core::ArchiveType::from_id(self.format.0).unwrap_or(zip67_core::ArchiveType::SEVEN_Z);
         let mut v = vec![MethodChoice(None)];
         v.extend(Method::for_type(t).iter().map(|m| MethodChoice(Some(*m))));
         v
@@ -181,11 +178,7 @@ pub struct ExtractForm {
 pub enum PendingAction {
     DeleteFs(Vec<PathBuf>, bool),
     DeleteInArchive(Vec<String>),
-    UpdateModified {
-        temp: PathBuf,
-        archive: PathBuf,
-        folder: String,
-    },
+    UpdateModified { temp: PathBuf, archive: PathBuf, folder: String },
     AddDropped(Vec<PathBuf>),
 }
 
@@ -212,42 +205,16 @@ pub struct ReportView {
 pub enum Modal {
     Add(AddForm),
     Extract(ExtractForm),
-    Password {
-        prompt: String,
-        value: String,
-        show: bool,
-        retry: Box<Request>,
-        purpose: Box<crate::app::Purpose>,
-        title: String,
-    },
+    Password { prompt: String, value: String, show: bool, retry: Box<Request>, purpose: Box<crate::app::Purpose>, title: String },
     Overwrite(Question),
-    Confirm {
-        title: String,
-        text: String,
-        ok: String,
-        danger: bool,
-        action: PendingAction,
-    },
-    Input {
-        title: String,
-        label: String,
-        value: String,
-        action: InputAction,
-        error: Option<String>,
-    },
+    Confirm { title: String, text: String, ok: String, danger: bool, action: PendingAction },
+    Input { title: String, label: String, value: String, action: InputAction, error: Option<String> },
     Report(ReportView),
-    Properties {
-        title: String,
-        lines: Vec<(String, String)>,
-        warning: Option<String>,
-    },
+    Properties { title: String, lines: Vec<(String, String)>, warning: Option<String> },
     Hashes(Vec<HashResult>, Vec<HashKind>),
     Bench(Option<Vec<zip67_core::bench::BenchResult>>),
     Settings,
     About,
     /// A decrypted file had to go to a temporary folder on a disk.
-    TempOnDisk {
-        folder: String,
-        dont_warn: bool,
-    },
+    TempOnDisk { folder: String, dont_warn: bool },
 }

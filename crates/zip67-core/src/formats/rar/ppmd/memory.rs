@@ -204,9 +204,7 @@ impl Memory {
     /// address and the length of the slice in registers across writes into the memory.
     #[inline(always)]
     pub(crate) fn view(&mut self) -> Memory<&mut [u8]> {
-        Memory {
-            bytes: &mut self.bytes,
-        }
+        Memory { bytes: &mut self.bytes }
     }
 }
 
@@ -232,9 +230,7 @@ impl<B: AsRef<[u8]> + AsMut<[u8]>> Memory<B> {
     #[inline(always)]
     fn record_mut<const N: usize>(&mut self, offset: u32) -> &mut [u8; N] {
         let offset = offset as usize;
-        (&mut self.bytes.as_mut()[offset..offset + N])
-            .try_into()
-            .unwrap()
+        (&mut self.bytes.as_mut()[offset..offset + N]).try_into().unwrap()
     }
 
     /// Returns the byte at offset `field` of the unit record at `unit`.
@@ -278,9 +274,7 @@ impl<B: AsRef<[u8]> + AsMut<[u8]>> Memory<B> {
     #[inline(always)]
     fn copy(&mut self, src: u32, dst: u32, len: u32) {
         let src = src as usize;
-        self.bytes
-            .as_mut()
-            .copy_within(src..src + len as usize, dst as usize);
+        self.bytes.as_mut().copy_within(src..src + len as usize, dst as usize);
     }
 
     /// Copies `nu` units from `src` to `dst`.
@@ -329,8 +323,7 @@ impl<B: AsRef<[u8]> + AsMut<[u8]>> Memory<B> {
 
     #[inline(always)]
     pub(crate) fn set_successor(&mut self, state: StateRef, value: Successor) {
-        self.record_mut::<{ STATE_SIZE as usize }>(state.0)[2..]
-            .copy_from_slice(&value.0.to_le_bytes());
+        self.record_mut::<{ STATE_SIZE as usize }>(state.0)[2..].copy_from_slice(&value.0.to_le_bytes());
     }
 
     #[inline(always)]

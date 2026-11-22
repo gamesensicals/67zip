@@ -29,12 +29,7 @@ fn parse_octal(field: &[u8]) -> Option<u64> {
         }
         return Some(v);
     }
-    let s: Vec<u8> = field
-        .iter()
-        .copied()
-        .skip_while(|&b| b == b' ')
-        .take_while(|&b| b != 0 && b != b' ')
-        .collect();
+    let s: Vec<u8> = field.iter().copied().skip_while(|&b| b == b' ').take_while(|&b| b != 0 && b != b' ').collect();
     if s.is_empty() {
         return Some(0);
     }
@@ -58,9 +53,7 @@ pub fn is_tar_header(h: &[u8]) -> bool {
     if h.len() < BLOCK || h.iter().all(|&b| b == 0) {
         return false;
     }
-    let Some(stored) = parse_octal(&h[148..156]) else {
-        return false;
-    };
+    let Some(stored) = parse_octal(&h[148..156]) else { return false };
     let mut unsigned: u64 = 0;
     let mut signed: i64 = 0;
     for (i, &b) in h[..BLOCK].iter().enumerate() {
@@ -88,11 +81,7 @@ struct TarStream<'a> {
 
 impl<'a> TarStream<'a> {
     fn read_block(&mut self, buf: &mut [u8; BLOCK]) -> Result<bool> {
-        let n = if let Some(s) = self.seekable.as_mut() {
-            crate::io::read_full(*s, buf)?
-        } else {
-            crate::io::read_full(&mut self.r, buf)?
-        };
+        let n = if let Some(s) = self.seekable.as_mut() { crate::io::read_full(*s, buf)? } else { crate::io::read_full(&mut self.r, buf)? };
         self.pos += n as u64;
         if n == 0 {
             return Ok(false);
@@ -157,8 +146,7 @@ impl<'a> TarStream<'a> {
                 return Err(Error::corrupt("tar header checksum mismatch"));
             }
             let typeflag = h[156];
-            let size =
-                parse_octal(&h[124..136]).ok_or_else(|| Error::corrupt("bad tar size field"))?;
+            let size = parse_octal(&h[124..136]).ok_or_else(|| Error::corrupt("bad tar size field"))?;
             match typeflag {
                 b'L' => {
                     long_name = Some(cstr(&self.read_meta(size)?).to_vec());
@@ -206,10 +194,7 @@ impl<'a> TarStream<'a> {
                     "path" => name_bytes = v.clone(),
                     "linkpath" => link = v.clone(),
                     "size" => {
-                        size = std::str::from_utf8(v)
-                            .ok()
-                            .and_then(|s| s.parse().ok())
-                            .ok_or_else(|| Error::corrupt("bad PAX size"))?
+                        size = std::str::from_utf8(v).ok().and_then(|s| s.parse().ok()).ok_or_else(|| Error::corrupt("bad PAX size"))?
                     }
                     "mtime" => {
                         if let Some((s, n)) = std::str::from_utf8(v).ok().and_then(parse_pax_time) {
@@ -246,14 +231,7 @@ impl<'a> TarStream<'a> {
             let (path, unsafe_path) = normalize_path(&name);
             let mut entry = Entry::new(self.count as usize - 1, path, kind);
             entry.unsafe_path = unsafe_path;
-            let data_size = if matches!(
-                kind,
-                EntryKind::Dir | EntryKind::Symlink | EntryKind::Hardlink
-            ) {
-                0
-            } else {
-                size
-            };
+            let data_size = if matches!(kind, EntryKind::Dir | EntryKind::Symlink | EntryKind::Hardlink) { 0 } else { size };
             entry.size = if kind == EntryKind::File { size } else { 0 };
             entry.mtime = mtime;
             entry.mtime_nanos = nanos;
@@ -262,11 +240,7 @@ impl<'a> TarStream<'a> {
                 entry.link_target = Some(decode_name(&link));
             }
             // Sparse or special members still occupy `size` bytes in the stream.
-            let data_size = if kind == EntryKind::Special {
-                size
-            } else {
-                data_size
-            };
+            let data_size = if kind == EntryKind::Special { size } else { data_size };
             return Ok(Some(Member { entry, data_size }));
         }
     }
@@ -293,24 +267,15 @@ fn parse_pax(data: &[u8]) -> Result<Vec<(String, Vec<u8>)>> {
     let mut out = Vec::new();
     let mut rest = data;
     while !rest.is_empty() {
-        let sp = rest
-            .iter()
-            .position(|&b| b == b' ')
-            .ok_or_else(|| Error::corrupt("bad PAX record"))?;
-        let len: usize = std::str::from_utf8(&rest[..sp])
-            .ok()
-            .and_then(|s| s.parse().ok())
-            .ok_or_else(|| Error::corrupt("bad PAX record length"))?;
+        let sp = rest.iter().position(|&b| b == b' ').ok_or_else(|| Error::corrupt("bad PAX record"))?;
+        let len: usize = std::str::from_utf8(&rest[..sp]).ok().and_then(|s| s.parse().ok()).ok_or_else(|| Error::corrupt("bad PAX record length"))?;
         if len <= sp + 1 || len > rest.len() {
             return Err(Error::corrupt("bad PAX record length"));
         }
         let rec = &rest[sp + 1..len];
         let rec = rec.strip_suffix(b"\n").unwrap_or(rec);
         if let Some(eq) = rec.iter().position(|&b| b == b'=') {
-            out.push((
-                String::from_utf8_lossy(&rec[..eq]).into_owned(),
-                rec[eq + 1..].to_vec(),
-            ));
+            out.push((String::from_utf8_lossy(&rec[..eq]).into_owned(), rec[eq + 1..].to_vec()));
         }
         rest = &rest[len..];
     }
@@ -326,12 +291,7 @@ pub struct TarReader {
 }
 
 impl TarReader {
-    pub fn open(
-        mut src: Box<dyn ReadSeek>,
-        size: u64,
-        compression: Compression,
-        opts: &OpenOptions,
-    ) -> Result<Self> {
+    pub fn open(mut src: Box<dyn ReadSeek>, size: u64, compression: Compression, opts: &OpenOptions) -> Result<Self> {
         let limits = opts.limits.clone();
         let mut entries = Vec::new();
         {
@@ -342,37 +302,15 @@ impl TarReader {
                 entries.push(m.entry);
             }
         }
-        Ok(TarReader {
-            src,
-            size,
-            compression,
-            entries,
-            limits,
-        })
+        Ok(TarReader { src, size, compression, entries, limits })
     }
 
-    fn stream<'a>(
-        src: &'a mut dyn ReadSeek,
-        c: Compression,
-        limits: &'a Limits,
-    ) -> Result<TarStream<'a>> {
+    fn stream<'a>(src: &'a mut dyn ReadSeek, c: Compression, limits: &'a Limits) -> Result<TarStream<'a>> {
         if c == Compression::None {
-            return Ok(TarStream {
-                r: Box::new(io::empty()),
-                seekable: Some(src),
-                pos: 0,
-                limits,
-                count: 0,
-            });
+            return Ok(TarStream { r: Box::new(io::empty()), seekable: Some(src), pos: 0, limits, count: 0 });
         }
         let r = codecs::decoder(c, Box::new(src), limits)?;
-        Ok(TarStream {
-            r,
-            seekable: None,
-            pos: 0,
-            limits,
-            count: 0,
-        })
+        Ok(TarStream { r, seekable: None, pos: 0, limits, count: 0 })
     }
 }
 
@@ -387,23 +325,14 @@ impl ArchiveReader for TarReader {
         ArchiveInfo {
             format: self.archive_type().id(),
             physical_size: self.size,
-            methods: if self.compression == Compression::None {
-                vec![]
-            } else {
-                vec![self.compression.display().into()]
-            },
+            methods: if self.compression == Compression::None { vec![] } else { vec![self.compression.display().into()] },
             solid: self.compression != Compression::None,
             blocks: 1,
             volumes: 1,
             ..Default::default()
         }
     }
-    fn extract(
-        &mut self,
-        selected: &dyn Fn(&Entry) -> bool,
-        visitor: &mut dyn EntryVisitor,
-        progress: &Progress,
-    ) -> Result<()> {
+    fn extract(&mut self, selected: &dyn Fn(&Entry) -> bool, visitor: &mut dyn EntryVisitor, progress: &Progress) -> Result<()> {
         self.src.seek(SeekFrom::Start(0))?;
         let limits = self.limits.clone();
         let mut stream = Self::stream(self.src.as_mut(), self.compression, &limits)?;
@@ -421,20 +350,12 @@ impl ArchiveReader for TarReader {
             progress.set_current(&entry.path);
             let res = match entry.kind {
                 EntryKind::Dir => visitor.dir(&entry),
-                EntryKind::Symlink => {
-                    visitor.symlink(&entry, entry.link_target.as_deref().unwrap_or(""))
-                }
-                EntryKind::Hardlink => {
-                    visitor.hardlink(&entry, entry.link_target.as_deref().unwrap_or(""))
-                }
+                EntryKind::Symlink => visitor.symlink(&entry, entry.link_target.as_deref().unwrap_or("")),
+                EntryKind::Hardlink => visitor.hardlink(&entry, entry.link_target.as_deref().unwrap_or("")),
                 EntryKind::Special => Ok(()),
                 EntryKind::File => {
                     let r = stream.reader();
-                    let guarded = SizeGuard::new(
-                        r.take(m.data_size),
-                        Some(m.data_size),
-                        limits.max_total_size,
-                    );
+                    let guarded = SizeGuard::new(r.take(m.data_size), Some(m.data_size), limits.max_total_size);
                     let mut p = Progressed::new(guarded, progress);
                     let res = visitor.file(&entry, &mut p);
                     // Whatever the visitor left unread must be skipped.
@@ -451,18 +372,13 @@ impl ArchiveReader for TarReader {
                     }
                 }
             };
-            if matches!(
-                entry.kind,
-                EntryKind::Dir | EntryKind::Symlink | EntryKind::Hardlink | EntryKind::Special
-            ) {
+            if matches!(entry.kind, EntryKind::Dir | EntryKind::Symlink | EntryKind::Hardlink | EntryKind::Special) {
                 stream.skip(total)?;
             }
             match res {
                 Ok(()) => progress.file_done(),
                 Err(Error::Cancelled) => return Err(Error::Cancelled),
-                Err(e @ (Error::Checksum(_) | Error::UnsafePath(_) | Error::InvalidInput(_))) => {
-                    visitor.entry_error(&entry, e)?
-                }
+                Err(e @ (Error::Checksum(_) | Error::UnsafePath(_) | Error::InvalidInput(_))) => visitor.entry_error(&entry, e)?,
                 Err(e) => return Err(e),
             }
         }
@@ -477,20 +393,9 @@ pub struct TarWriter {
 }
 
 impl TarWriter {
-    pub fn new(
-        file: std::fs::File,
-        c: Compression,
-        level: u32,
-        threads: usize,
-        size_hint: Option<u64>,
-    ) -> Result<Self> {
-        let buffered: codecs::BoxWrite<'static> =
-            Box::new(io::BufWriter::with_capacity(256 * 1024, file));
-        Ok(TarWriter {
-            out: Some(codecs::encoder_sized(
-                c, buffered, level, threads, None, 0, size_hint,
-            )?),
-        })
+    pub fn new(file: std::fs::File, c: Compression, level: u32, threads: usize, size_hint: Option<u64>) -> Result<Self> {
+        let buffered: codecs::BoxWrite<'static> = Box::new(io::BufWriter::with_capacity(256 * 1024, file));
+        Ok(TarWriter { out: Some(codecs::encoder_sized(c, buffered, level, threads, None, 0, size_hint)?) })
     }
     /// Writes tar data into any writer (used for nesting inside other formats).
     pub fn from_writer(w: Box<dyn FinishWrite>) -> Self {
@@ -498,9 +403,7 @@ impl TarWriter {
     }
 
     fn w(&mut self) -> Result<&mut Box<dyn FinishWrite>> {
-        self.out
-            .as_mut()
-            .ok_or_else(|| Error::invalid("tar writer finished"))
+        self.out.as_mut().ok_or_else(|| Error::invalid("tar writer finished"))
     }
 }
 
@@ -528,17 +431,7 @@ fn pax_record(key: &str, value: &[u8]) -> Vec<u8> {
     r
 }
 
-fn header(
-    name: &[u8],
-    prefix: &[u8],
-    item_mode: u32,
-    uid: u32,
-    gid: u32,
-    size: u64,
-    mtime: i64,
-    typeflag: u8,
-    link: &[u8],
-) -> [u8; BLOCK] {
+fn header(name: &[u8], prefix: &[u8], item_mode: u32, uid: u32, gid: u32, size: u64, mtime: i64, typeflag: u8, link: &[u8]) -> [u8; BLOCK] {
     let mut h = [0u8; BLOCK];
     h[..name.len().min(100)].copy_from_slice(&name[..name.len().min(100)]);
     octal(&mut h[100..108], u64::from(item_mode & 0o7777));
@@ -588,11 +481,7 @@ impl ArchiveWriter for TarWriter {
             _ => b'0',
         };
         let link = item.link_target.clone().unwrap_or_default();
-        let size = if item.kind == EntryKind::File {
-            item.size
-        } else {
-            0
-        };
+        let size = if item.kind == EntryKind::File { item.size } else { 0 };
         let pb = path.as_bytes();
         let split = split_ustar(pb);
         let mut pax = Vec::new();
@@ -606,50 +495,24 @@ impl ArchiveWriter for TarWriter {
             pax.extend(pax_record("size", size.to_string().as_bytes()));
         }
         if item.mtime < 0 || item.mtime > 0o77777777777 || item.mtime_nanos != 0 {
-            pax.extend(pax_record(
-                "mtime",
-                format!("{}.{:09}", item.mtime, item.mtime_nanos).as_bytes(),
-            ));
+            pax.extend(pax_record("mtime", format!("{}.{:09}", item.mtime, item.mtime_nanos).as_bytes()));
         }
         let w = self.w()?;
         if !pax.is_empty() {
-            let h = header(
-                b"././@PaxHeader",
-                &[],
-                0o644,
-                0,
-                0,
-                pax.len() as u64,
-                item.mtime,
-                b'x',
-                &[],
-            );
+            let h = header(b"././@PaxHeader", &[], 0o644, 0, 0, pax.len() as u64, item.mtime, b'x', &[]);
             w.write_all(&h)?;
             w.write_all(&pax)?;
             w.write_all(&vec![0u8; padding(pax.len() as u64) as usize])?;
         }
         let (prefix, name) = split.unwrap_or((&[], &pb[pb.len().saturating_sub(100)..]));
-        let h = header(
-            name,
-            prefix,
-            item.mode,
-            item.uid,
-            item.gid,
-            size,
-            item.mtime,
-            typeflag,
-            link.as_bytes(),
-        );
+        let h = header(name, prefix, item.mode, item.uid, item.gid, size, item.mtime, typeflag, link.as_bytes());
         w.write_all(&h)?;
         if item.kind == EntryKind::File {
             let r = data.ok_or_else(|| Error::invalid("file data missing"))?;
             let mut limited = r.take(size);
             let n = crate::create::pump(&mut limited, w, progress)?;
             if n != size {
-                return Err(Error::invalid(format!(
-                    "{} changed size while it was being archived",
-                    item.arcname
-                )));
+                return Err(Error::invalid(format!("{} changed size while it was being archived", item.arcname)));
             }
             w.write_all(&vec![0u8; padding(size) as usize])?;
             progress.add_packed(size);
@@ -658,10 +521,7 @@ impl ArchiveWriter for TarWriter {
     }
 
     fn finish(mut self: Box<Self>, _progress: &Progress) -> Result<()> {
-        let mut w = self
-            .out
-            .take()
-            .ok_or_else(|| Error::invalid("tar writer finished"))?;
+        let mut w = self.out.take().ok_or_else(|| Error::invalid("tar writer finished"))?;
         w.write_all(&[0u8; BLOCK * 2])?;
         w.finish_box()
     }
@@ -676,10 +536,7 @@ mod tests {
         for n in [1usize, 50, 89, 90, 95, 99, 100, 990, 995, 1000] {
             let v = vec![b'a'; n];
             let r = pax_record("path", &v);
-            let len: usize = std::str::from_utf8(&r[..r.iter().position(|&b| b == b' ').unwrap()])
-                .unwrap()
-                .parse()
-                .unwrap();
+            let len: usize = std::str::from_utf8(&r[..r.iter().position(|&b| b == b' ').unwrap()]).unwrap().parse().unwrap();
             assert_eq!(len, r.len(), "value length {n}");
         }
     }

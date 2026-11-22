@@ -2,7 +2,7 @@
 
 use std::io::{self, BufRead, Read};
 
-use miniz_oxide::inflate::stream::{InflateState, inflate};
+use miniz_oxide::inflate::stream::{inflate, InflateState};
 use miniz_oxide::{DataFormat, MZError, MZFlush, MZStatus};
 
 use crate::error::Error;
@@ -17,11 +17,7 @@ pub struct InflateReader<R> {
 
 impl<R: BufRead> InflateReader<R> {
     pub fn new(inner: R) -> Self {
-        InflateReader {
-            inner,
-            state: InflateState::new_boxed(DataFormat::Raw),
-            done: false,
-        }
+        InflateReader { inner, state: InflateState::new_boxed(DataFormat::Raw), done: false }
     }
     pub fn is_done(&self) -> bool {
         self.done

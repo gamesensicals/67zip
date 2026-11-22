@@ -6,7 +6,7 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use sha2::{Digest, Sha256};
-use zip67_core::{Entry, EntryVisitor, Error, OpenOptions, Password, Progress, Result, open};
+use zip67_core::{open, Entry, EntryVisitor, Error, OpenOptions, Password, Progress, Result};
 
 fn data() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data/rar")
@@ -21,10 +21,7 @@ impl EntryVisitor for Collect {
     fn file(&mut self, e: &Entry, data: &mut dyn Read) -> Result<()> {
         let mut v = Vec::new();
         data.read_to_end(&mut v)?;
-        let h: String = Sha256::digest(&v)[..8]
-            .iter()
-            .map(|b| format!("{b:02x}"))
-            .collect();
+        let h: String = Sha256::digest(&v)[..8].iter().map(|b| format!("{b:02x}")).collect();
         self.lines.push(format!("F {} {} {h}", e.path, v.len()));
         Ok(())
     }
@@ -58,21 +55,12 @@ fn password_for(name: &str) -> Option<&'static str> {
 
 /// What 67zip makes of one archive, as text.
 fn describe(name: &str) -> String {
-    let opts = OpenOptions {
-        password: password_for(name).map(Password::new),
-        ..Default::default()
-    };
+    let opts = OpenOptions { password: password_for(name).map(Password::new), ..Default::default() };
     let mut out = format!("== {name}\n");
     match open(&data().join(name), &opts) {
         Ok(mut r) => {
             let info = r.info();
-            out += &format!(
-                "format {} volumes {} solid {} entries {}\n",
-                info.format,
-                info.volumes,
-                info.solid,
-                r.entries().len()
-            );
+            out += &format!("format {} volumes {} solid {} entries {}\n", info.format, info.volumes, info.solid, r.entries().len());
             for p in &info.problems {
                 out += &format!("problem {p}\n");
             }
@@ -94,11 +82,7 @@ fn archives() -> Vec<String> {
     let mut v: Vec<String> = std::fs::read_dir(data())
         .unwrap()
         .filter_map(|e| e.ok()?.file_name().into_string().ok())
-        .filter(|n| {
-            (n.ends_with(".rar") || n.ends_with(".exe")) && !n.contains(".part")
-                || n.ends_with(".part1.rar")
-                || n.ends_with(".part01.rar")
-        })
+        .filter(|n| (n.ends_with(".rar") || n.ends_with(".exe")) && !n.contains(".part") || n.ends_with(".part1.rar") || n.ends_with(".part01.rar"))
         .collect();
     v.sort();
     v
@@ -119,63 +103,26 @@ fn samples_match_expected() {
                 panic!("first difference:\n got: {g}\nwant: {w}");
             }
         }
-        panic!(
-            "output length differs ({} vs {} lines)",
-            got.lines().count(),
-            want.lines().count()
-        );
+        panic!("output length differs ({} vs {} lines)", got.lines().count(), want.lines().count());
     }
 }
 
 #[test]
 fn wrong_and_missing_passwords() {
-    for (name, wrong_err) in [
-        ("rar5_encrypted_filenames.rar", true),
-        ("rar_encryption_header.rar", true),
-    ] {
+    for (name, wrong_err) in [("rar5_encrypted_filenames.rar", true), ("rar_encryption_header.rar", true)] {
         let p = data().join(name);
-        assert!(
-            matches!(
-                open(&p, &OpenOptions::default()),
-                Err(Error::PasswordRequired)
-            ),
-            "{name}"
-        );
-        let opts = OpenOptions {
-            password: Some(Password::new("not it")),
-            ..Default::default()
-        };
-        assert_eq!(
-            matches!(open(&p, &opts), Err(Error::WrongPassword)),
-            wrong_err,
-            "{name}"
-        );
+        assert!(matches!(open(&p, &OpenOptions::default()), Err(Error::PasswordRequired)), "{name}");
+        let opts = OpenOptions { password: Some(Password::new("not it")), ..Default::default() };
+        assert_eq!(matches!(open(&p, &opts), Err(Error::WrongPassword)), wrong_err, "{name}");
     }
     // Encrypted data with plain headers: listed, then refused per file.
-    let opts = OpenOptions {
-        password: Some(Password::new("not it")),
-        ..Default::default()
-    };
-    for name in [
-        "rar5_solid_encrypted.rar",
-        "rar_encryption_data.rar",
-        "rar4_solid_encrypted.rar",
-    ] {
+    let opts = OpenOptions { password: Some(Password::new("not it")), ..Default::default() };
+    for name in ["rar5_solid_encrypted.rar", "rar_encryption_data.rar", "rar4_solid_encrypted.rar"] {
         let mut r = open(&data().join(name), &opts).unwrap();
         let mut c = Collect::default();
         r.extract(&|_| true, &mut c, &Progress::new()).unwrap();
-        assert!(
-            c.lines
-                .iter()
-                .any(|l| l.starts_with('E') && l.contains("wrong password")),
-            "{name}: {:?}",
-            c.lines
-        );
-        assert!(
-            !c.lines.iter().any(|l| l.starts_with('F')),
-            "{name}: {:?}",
-            c.lines
-        );
+        assert!(c.lines.iter().any(|l| l.starts_with('E') && l.contains("wrong password")), "{name}: {:?}", c.lines);
+        assert!(!c.lines.iter().any(|l| l.starts_with('F')), "{name}: {:?}", c.lines);
     }
 }
 
@@ -193,11 +140,7 @@ fn self_extracting_and_truncated() {
     assert_eq!(r.info().offset, 70_002);
     let mut c = Collect::default();
     r.extract(&|_| true, &mut c, &Progress::new()).unwrap();
-    assert!(
-        c.lines.iter().any(|l| l.starts_with("F test.bin 1200 ")),
-        "{:?}",
-        c.lines
-    );
+    assert!(c.lines.iter().any(|l| l.starts_with("F test.bin 1200 ")), "{:?}", c.lines);
 
     // Cut off in the middle of the data: the file fails, the cut is reported.
     let p = tmp.path().join("cut.rar");
@@ -225,9 +168,7 @@ fn files_from_test_encoder() {
     // file; checked through the CRC and by comparing the content.
     let mut text = Vec::new();
     for i in 0..60_000u32 {
-        text.extend_from_slice(
-            format!("line {i}: the quick brown fox {} jumps\n", i % 97).as_bytes(),
-        );
+        text.extend_from_slice(format!("line {i}: the quick brown fox {} jumps\n", i % 97).as_bytes());
     }
     let mut bin = Vec::new();
     let mut x = 0x1234_5678u32;
@@ -235,11 +176,7 @@ fn files_from_test_encoder() {
         x ^= x << 13;
         x ^= x >> 17;
         x ^= x << 5;
-        bin.push(if i % 3 == 0 {
-            (x >> 24) as u8
-        } else {
-            (i / 1000) as u8
-        });
+        bin.push(if i % 3 == 0 { (x >> 24) as u8 } else { (i / 1000) as u8 });
     }
     let files: Vec<(&str, &[u8])> = vec![("text.txt", &text), ("empty", &[]), ("bin.dat", &bin)];
     let arc = rar5enc::archive(&files);
@@ -269,10 +206,7 @@ fn files_from_test_encoder() {
 fn fuzz_finds_fail_cleanly() {
     for f in std::fs::read_dir(data().join("fuzz")).unwrap() {
         let p = f.unwrap().path();
-        let opts = OpenOptions {
-            password: Some(Password::new("fuzz")),
-            ..Default::default()
-        };
+        let opts = OpenOptions { password: Some(Password::new("fuzz")), ..Default::default() };
         if let Ok(mut r) = open(&p, &opts) {
             let _ = r.extract(&|_| true, &mut Collect::default(), &Progress::new());
         }
@@ -281,44 +215,22 @@ fn fuzz_finds_fail_cleanly() {
 
 #[test]
 fn link_tricks_cannot_escape() {
-    use zip67_core::extract::{ExtractOptions, Overwrite, Selection, extract_to};
+    use zip67_core::extract::{extract_to, ExtractOptions, Overwrite, Selection};
     // "up -> .." followed by "up/pwned.txt", and links to "../../missing"
     // and an absolute Windows junction.
-    for name in [
-        "rarfile-rar5-evil-symlink-traversal.rar",
-        "rarfile-rar5-symlink-win.rar",
-        "rarfile-rar3-symlink-unix.rar",
-    ] {
+    for name in ["rarfile-rar5-evil-symlink-traversal.rar", "rarfile-rar5-symlink-win.rar", "rarfile-rar3-symlink-unix.rar"] {
         let tmp = tempfile::tempdir().unwrap();
         let dest = tmp.path().join("dest");
         std::fs::create_dir(&dest).unwrap();
         let mut r = open(&data().join(name), &OpenOptions::default()).unwrap();
-        let opts = ExtractOptions {
-            overwrite: Overwrite::Always,
-            ..Default::default()
-        };
-        let _ = extract_to(
-            r.as_mut(),
-            &dest,
-            &Selection::All,
-            &opts,
-            None,
-            &Progress::new(),
-        );
-        assert!(
-            !tmp.path().join("pwned.txt").exists(),
-            "{name}: wrote outside the destination"
-        );
+        let opts = ExtractOptions { overwrite: Overwrite::Always, ..Default::default() };
+        let _ = extract_to(r.as_mut(), &dest, &Selection::All, &opts, None, &Progress::new());
+        assert!(!tmp.path().join("pwned.txt").exists(), "{name}: wrote outside the destination");
         for e in walk(&dest) {
             if let Ok(t) = std::fs::read_link(&e) {
                 let resolved = e.parent().unwrap().join(&t);
                 let canon = normalize(&resolved);
-                assert!(
-                    canon.starts_with(&dest),
-                    "{name}: link {} -> {} leaves the destination",
-                    e.display(),
-                    t.display()
-                );
+                assert!(canon.starts_with(&dest), "{name}: link {} -> {} leaves the destination", e.display(), t.display());
             }
         }
     }

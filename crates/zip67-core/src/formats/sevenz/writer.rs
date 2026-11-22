@@ -11,7 +11,7 @@ use std::sync::{Arc, Mutex};
 use zeroize::Zeroizing;
 
 use super::coders::{self, aes_props, derive_key, lzma2_prop_from_dict};
-use super::header::{self, Coder, FileRecord, Folder, SIGNATURE, StreamsInfo};
+use super::header::{self, Coder, FileRecord, Folder, StreamsInfo, SIGNATURE};
 use crate::cipher::{AesKey, CbcEncryptWriter};
 use crate::codecs::{self, BoxWrite, FinishWrite};
 use crate::create::{ArchiveWriter, CreateOptions, Item, Method};
@@ -32,19 +32,13 @@ struct SharedOut {
 }
 impl Write for SharedOut {
     fn write(&mut self, b: &[u8]) -> io::Result<usize> {
-        let mut o = self
-            .out
-            .lock()
-            .map_err(|_| io::Error::other("output lock poisoned"))?;
+        let mut o = self.out.lock().map_err(|_| io::Error::other("output lock poisoned"))?;
         let n = o.write(b)?;
         self.count.fetch_add(n as u64, Ordering::Relaxed);
         Ok(n)
     }
     fn flush(&mut self) -> io::Result<()> {
-        self.out
-            .lock()
-            .map_err(|_| io::Error::other("output lock poisoned"))?
-            .flush()
+        self.out.lock().map_err(|_| io::Error::other("output lock poisoned"))?.flush()
     }
 }
 
@@ -58,10 +52,7 @@ struct AesIn {
 }
 impl Write for AesIn {
     fn write(&mut self, b: &[u8]) -> io::Result<usize> {
-        let mut g = self
-            .slot
-            .lock()
-            .map_err(|_| io::Error::other("aes lock poisoned"))?;
+        let mut g = self.slot.lock().map_err(|_| io::Error::other("aes lock poisoned"))?;
         let w = g.as_mut().ok_or_else(|| io::Error::other("aes finished"))?;
         let n = w.write(b)?;
         self.count.fetch_add(n as u64, Ordering::Relaxed);
@@ -169,14 +160,9 @@ impl SevenZWriter {
         out.write_all(&[0u8; 32])?; // signature header, patched at the end
         let method = opts.effective_method();
         if !Method::for_type(crate::detect::ArchiveType::SEVEN_Z).contains(&method) {
-            return Err(Error::invalid(format!(
-                "{} is not available for 7z archives",
-                method.name()
-            )));
+            return Err(Error::invalid(format!("{} is not available for 7z archives", method.name())));
         }
-        let dict = opts
-            .dict_size
-            .unwrap_or_else(|| codecs::lzma_options(opts.level).dict_size);
+        let dict = opts.dict_size.unwrap_or_else(|| codecs::lzma_options(opts.level).dict_size);
         let key = match &opts.password {
             Some(p) if !p.is_empty() => Some(derive_key(p, &[], AES_CYCLES)?),
             Some(_) => return Err(Error::invalid("the password is empty")),
@@ -202,32 +188,14 @@ impl SevenZWriter {
     fn start_folder(&mut self) -> Result<()> {
         let pack_count = Arc::new(AtomicU64::new(0));
         let mid_count = Arc::new(AtomicU64::new(0));
-        let sink = SharedOut {
-            out: self.out.clone(),
-            count: pack_count.clone(),
-        };
+        let sink = SharedOut { out: self.out.clone(), count: pack_count.clone() };
         let mut coders_list = Vec::new();
         let (stage, aes): (BoxWrite<'static>, Option<AesSlot>) = match &self.key {
             Some(k) => {
                 let iv = random_iv()?;
-                let slot: AesSlot = Arc::new(Mutex::new(Some(CbcEncryptWriter::new(
-                    sink,
-                    AesKey::new(&k[..])?,
-                    iv,
-                ))));
-                coders_list.push(Coder {
-                    id: coders::ID_AES.to_vec(),
-                    num_in: 1,
-                    num_out: 1,
-                    props: aes_props(AES_CYCLES, &iv),
-                });
-                (
-                    Box::new(AesIn {
-                        slot: slot.clone(),
-                        count: mid_count.clone(),
-                    }),
-                    Some(slot),
-                )
+                let slot: AesSlot = Arc::new(Mutex::new(Some(CbcEncryptWriter::new(sink, AesKey::new(&k[..])?, iv))));
+                coders_list.push(Coder { id: coders::ID_AES.to_vec(), num_in: 1, num_out: 1, props: aes_props(AES_CYCLES, &iv) });
+                (Box::new(AesIn { slot: slot.clone(), count: mid_count.clone() }), Some(slot))
             }
             None => (Box::new(sink), None),
         };
@@ -237,32 +205,13 @@ impl SevenZWriter {
                 o.lzma_options = codecs::lzma_options(self.level);
                 o.lzma_options.dict_size = self.dict;
                 let props = vec![lzma2_prop_from_dict(self.dict)];
-                let coder = Coder {
-                    id: coders::ID_LZMA2.to_vec(),
-                    num_in: 1,
-                    num_out: 1,
-                    props,
-                };
+                let coder = Coder { id: coders::ID_LZMA2.to_vec(), num_in: 1, num_out: 1, props };
                 if self.threads > 1 {
                     let hint = self.size_hint.map(|t| t.min(SOLID_BLOCK_LIMIT));
-                    o.set_chunk_size(NonZeroU64::new(codecs::mt_block_size(
-                        self.dict,
-                        self.threads,
-                        hint,
-                    )));
-                    (
-                        Box::new(Lzma2MtW(lzma_rust2::Lzma2WriterMt::new(
-                            stage,
-                            o,
-                            self.threads as u32,
-                        )?)),
-                        coder,
-                    )
+                    o.set_chunk_size(NonZeroU64::new(codecs::mt_block_size(self.dict, self.threads, hint)));
+                    (Box::new(Lzma2MtW(lzma_rust2::Lzma2WriterMt::new(stage, o, self.threads as u32)?)), coder)
                 } else {
-                    (
-                        Box::new(Lzma2W(lzma_rust2::Lzma2Writer::new(stage, o))),
-                        coder,
-                    )
+                    (Box::new(Lzma2W(lzma_rust2::Lzma2Writer::new(stage, o))), coder)
                 }
             }
             Method::Lzma => {
@@ -271,111 +220,44 @@ impl SevenZWriter {
                 let w = lzma_rust2::LzmaWriter::new_no_header(stage, &o, false)?;
                 let mut props = vec![w.props()];
                 props.extend_from_slice(&self.dict.to_le_bytes());
-                (
-                    Box::new(LzmaW(w)),
-                    Coder {
-                        id: coders::ID_LZMA.to_vec(),
-                        num_in: 1,
-                        num_out: 1,
-                        props,
-                    },
-                )
+                (Box::new(LzmaW(w)), Coder { id: coders::ID_LZMA.to_vec(), num_in: 1, num_out: 1, props })
             }
             Method::Ppmd => {
                 let (order, mem) = ppmd_params(self.level);
-                let w = ppmd_rust::Ppmd7Encoder::new(stage, order, mem)
-                    .map_err(|e| Error::invalid(format!("ppmd: {e:?}")))?;
+                let w = ppmd_rust::Ppmd7Encoder::new(stage, order, mem).map_err(|e| Error::invalid(format!("ppmd: {e:?}")))?;
                 let mut props = vec![order as u8];
                 props.extend_from_slice(&mem.to_le_bytes());
-                (
-                    Box::new(PpmdW(w)),
-                    Coder {
-                        id: coders::ID_PPMD.to_vec(),
-                        num_in: 1,
-                        num_out: 1,
-                        props,
-                    },
-                )
+                (Box::new(PpmdW(w)), Coder { id: coders::ID_PPMD.to_vec(), num_in: 1, num_out: 1, props })
             }
             Method::Bzip2 => (
-                codecs::encoder(
-                    crate::detect::Compression::Bzip2,
-                    stage,
-                    self.level,
-                    self.threads,
-                    None,
-                    0,
-                )?,
-                Coder {
-                    id: coders::ID_BZIP2.to_vec(),
-                    num_in: 1,
-                    num_out: 1,
-                    props: vec![],
-                },
+                codecs::encoder(crate::detect::Compression::Bzip2, stage, self.level, self.threads, None, 0)?,
+                Coder { id: coders::ID_BZIP2.to_vec(), num_in: 1, num_out: 1, props: vec![] },
             ),
             Method::Deflate => (
-                Box::new(DeflW(flate2::write::DeflateEncoder::new(
-                    stage,
-                    flate2::Compression::new(codecs::deflate_level(self.level)),
-                ))),
-                Coder {
-                    id: coders::ID_DEFLATE.to_vec(),
-                    num_in: 1,
-                    num_out: 1,
-                    props: vec![],
-                },
+                Box::new(DeflW(flate2::write::DeflateEncoder::new(stage, flate2::Compression::new(codecs::deflate_level(self.level))))),
+                Coder { id: coders::ID_DEFLATE.to_vec(), num_in: 1, num_out: 1, props: vec![] },
             ),
             Method::Copy => (
                 codecs::encoder(crate::detect::Compression::None, stage, 0, 1, None, 0)?,
-                Coder {
-                    id: coders::ID_COPY.to_vec(),
-                    num_in: 1,
-                    num_out: 1,
-                    props: vec![],
-                },
+                Coder { id: coders::ID_COPY.to_vec(), num_in: 1, num_out: 1, props: vec![] },
             ),
-            other => {
-                return Err(Error::invalid(format!(
-                    "{} is not available for 7z archives",
-                    other.name()
-                )));
-            }
+            other => return Err(Error::invalid(format!("{} is not available for 7z archives", other.name()))),
         };
         // Coder 0 produces the folder output; the AES coder (if any) feeds it.
         coders_list.insert(0, coder);
-        self.cur = Some(CurFolder {
-            enc,
-            coders: coders_list,
-            aes,
-            pack_count,
-            mid_count,
-            unpack: 0,
-            sizes: Vec::new(),
-            crcs: Vec::new(),
-        });
+        self.cur = Some(CurFolder { enc, coders: coders_list, aes, pack_count, mid_count, unpack: 0, sizes: Vec::new(), crcs: Vec::new() });
         Ok(())
     }
 
     fn finish_folder(&mut self) -> Result<()> {
-        let Some(cur) = self.cur.take() else {
-            return Ok(());
-        };
+        let Some(cur) = self.cur.take() else { return Ok(()) };
         cur.enc.finish_box()?;
         if let Some(slot) = &cur.aes {
-            let w = slot
-                .lock()
-                .map_err(|_| Error::invalid("aes lock"))?
-                .take()
-                .ok_or_else(|| Error::invalid("aes finished"))?;
+            let w = slot.lock().map_err(|_| Error::invalid("aes lock"))?.take().ok_or_else(|| Error::invalid("aes finished"))?;
             w.finish()?.flush()?;
         }
         let pack = cur.pack_count.load(Ordering::Relaxed);
-        let mut folder = Folder {
-            coders: cur.coders,
-            first_pack: self.streams.pack_sizes.len(),
-            num_substreams: cur.sizes.len() as u64,
-            ..Default::default()
-        };
+        let mut folder = Folder { coders: cur.coders, first_pack: self.streams.pack_sizes.len(), num_substreams: cur.sizes.len() as u64, ..Default::default() };
         if cur.aes.is_some() {
             folder.bind_pairs = vec![(0, 1)];
             folder.packed = vec![1];
@@ -405,9 +287,7 @@ impl SevenZWriter {
     /// Compresses (and maybe encrypts) the header into a packed stream.
     fn encode_header(&mut self, raw: &[u8]) -> Result<Vec<u8>> {
         let mut lzma_opts = lzma_rust2::LzmaOptions::with_preset(5);
-        lzma_opts.dict_size = (raw.len() as u32)
-            .next_power_of_two()
-            .clamp(1 << 16, 1 << 24);
+        lzma_opts.dict_size = (raw.len() as u32).next_power_of_two().clamp(1 << 16, 1 << 24);
         let mut packed = Vec::new();
         let w = lzma_rust2::LzmaWriter::new_no_header(&mut packed, &lzma_opts, false)?;
         let props_byte = w.props();
@@ -416,32 +296,14 @@ impl SevenZWriter {
         w.finish()?;
         let mut lzma_props = vec![props_byte];
         lzma_props.extend_from_slice(&lzma_opts.dict_size.to_le_bytes());
-        let lzma_coder = Coder {
-            id: coders::ID_LZMA.to_vec(),
-            num_in: 1,
-            num_out: 1,
-            props: lzma_props,
-        };
-        let mut folder = Folder {
-            first_pack: 0,
-            num_substreams: 1,
-            crc: Some(crate::crc::crc32(raw)),
-            ..Default::default()
-        };
+        let lzma_coder = Coder { id: coders::ID_LZMA.to_vec(), num_in: 1, num_out: 1, props: lzma_props };
+        let mut folder = Folder { first_pack: 0, num_substreams: 1, crc: Some(crate::crc::crc32(raw)), ..Default::default() };
         let data = if let (true, Some(k)) = (self.encrypt_names, &self.key) {
             let iv = random_iv()?;
             let mut enc = CbcEncryptWriter::new(Vec::new(), AesKey::new(&k[..])?, iv);
             enc.write_all(&packed)?;
             let ct = enc.finish()?;
-            folder.coders = vec![
-                lzma_coder,
-                Coder {
-                    id: coders::ID_AES.to_vec(),
-                    num_in: 1,
-                    num_out: 1,
-                    props: aes_props(AES_CYCLES, &iv),
-                },
-            ];
+            folder.coders = vec![lzma_coder, Coder { id: coders::ID_AES.to_vec(), num_in: 1, num_out: 1, props: aes_props(AES_CYCLES, &iv) }];
             folder.bind_pairs = vec![(0, 1)];
             folder.packed = vec![1];
             folder.unpack_sizes = vec![raw.len() as u64, packed.len() as u64];
@@ -452,13 +314,7 @@ impl SevenZWriter {
             folder.unpack_sizes = vec![raw.len() as u64];
             packed
         };
-        let si = StreamsInfo {
-            pack_pos: self.pos,
-            pack_sizes: vec![data.len() as u64],
-            folders: vec![folder],
-            sub_sizes: vec![],
-            sub_crcs: vec![],
-        };
+        let si = StreamsInfo { pack_pos: self.pos, pack_sizes: vec![data.len() as u64], folders: vec![folder], sub_sizes: vec![], sub_crcs: vec![] };
         {
             let mut o = self.out.lock().map_err(|_| Error::invalid("lock"))?;
             o.write_all(&data)?;
@@ -481,14 +337,7 @@ impl ArchiveWriter for SevenZWriter {
             _ => item.size > 0,
         };
         if !has_data {
-            self.files.push(FileRecord {
-                name,
-                has_stream: false,
-                is_dir: item.kind == EntryKind::Dir,
-                is_anti: false,
-                mtime,
-                attrib,
-            });
+            self.files.push(FileRecord { name, has_stream: false, is_dir: item.kind == EntryKind::Dir, is_anti: false, mtime, attrib });
             return Ok(());
         }
         if self.cur.is_none() {
@@ -503,10 +352,7 @@ impl ArchiveWriter for SevenZWriter {
         } else {
             data.ok_or_else(|| Error::invalid("file data missing"))?
         };
-        let cur = self
-            .cur
-            .as_mut()
-            .ok_or_else(|| Error::invalid("no folder"))?;
+        let cur = self.cur.as_mut().ok_or_else(|| Error::invalid("no folder"))?;
         let mut crc = crc32fast::Hasher::new();
         let mut n = 0u64;
         let mut buf = vec![0u8; crate::io::BUF_SIZE];
@@ -527,27 +373,13 @@ impl ArchiveWriter for SevenZWriter {
         }
         if n == 0 {
             // The file turned out empty: store it as an empty file.
-            self.files.push(FileRecord {
-                name,
-                has_stream: false,
-                is_dir: false,
-                is_anti: false,
-                mtime,
-                attrib,
-            });
+            self.files.push(FileRecord { name, has_stream: false, is_dir: false, is_anti: false, mtime, attrib });
             return Ok(());
         }
         cur.unpack += n;
         cur.sizes.push(n);
         cur.crcs.push(Some(crc.finalize()));
-        self.files.push(FileRecord {
-            name,
-            has_stream: true,
-            is_dir: false,
-            is_anti: false,
-            mtime,
-            attrib,
-        });
+        self.files.push(FileRecord { name, has_stream: true, is_dir: false, is_anti: false, mtime, attrib });
         progress.add_packed(0);
         if !self.solid || cur.unpack >= SOLID_BLOCK_LIMIT {
             self.finish_folder()?;
@@ -568,11 +400,7 @@ impl ArchiveWriter for SevenZWriter {
             }
             header::write_files(&mut raw, &self.files);
             raw.push(header::id::END);
-            let next = if raw.len() > 64 || self.encrypt_names {
-                self.encode_header(&raw)?
-            } else {
-                raw
-            };
+            let next = if raw.len() > 64 || self.encrypt_names { self.encode_header(&raw)? } else { raw };
             (next, self.pos)
         };
         let next_crc = crate::crc::crc32(&next);

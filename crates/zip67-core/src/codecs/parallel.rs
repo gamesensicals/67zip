@@ -4,8 +4,8 @@
 
 use std::collections::BTreeMap;
 use std::io::{self, Write};
-use std::sync::Arc;
 use std::sync::mpsc;
+use std::sync::Arc;
 use std::thread;
 
 use crate::error::{Error, Result};
@@ -74,29 +74,19 @@ impl<W: Write> ParallelWriter<W> {
         while self.in_flight >= self.max_in_flight {
             self.collect_one()?;
         }
-        let tx = self
-            .job_tx
-            .as_ref()
-            .ok_or_else(|| Error::invalid("writer finished"))?;
-        tx.send((self.next_id, data))
-            .map_err(|_| Error::invalid("compression thread stopped"))?;
+        let tx = self.job_tx.as_ref().ok_or_else(|| Error::invalid("writer finished"))?;
+        tx.send((self.next_id, data)).map_err(|_| Error::invalid("compression thread stopped"))?;
         self.next_id += 1;
         self.in_flight += 1;
         Ok(())
     }
 
     fn collect_one(&mut self) -> Result<()> {
-        let (id, res) = self
-            .res_rx
-            .recv()
-            .map_err(|_| Error::invalid("compression thread stopped"))?;
+        let (id, res) = self.res_rx.recv().map_err(|_| Error::invalid("compression thread stopped"))?;
         self.in_flight -= 1;
         self.pending.insert(id, res);
         while let Some(res) = self.pending.remove(&self.next_write) {
-            self.inner
-                .as_mut()
-                .ok_or_else(|| Error::invalid("writer finished"))?
-                .write_all(&res?)?;
+            self.inner.as_mut().ok_or_else(|| Error::invalid("writer finished"))?.write_all(&res?)?;
             self.next_write += 1;
         }
         Ok(())
@@ -111,9 +101,7 @@ impl<W: Write> ParallelWriter<W> {
         for w in self.workers.drain(..) {
             let _ = w.join();
         }
-        self.inner
-            .take()
-            .ok_or_else(|| Error::invalid("writer finished"))
+        self.inner.take().ok_or_else(|| Error::invalid("writer finished"))
     }
 }
 

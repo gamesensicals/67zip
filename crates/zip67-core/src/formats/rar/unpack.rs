@@ -5,9 +5,9 @@
 use std::io::{self, Read};
 
 use super::bits::Input;
+use super::unpack20::Unpack20;
 use super::unpack3::Unpack3;
 use super::unpack5::Unpack5;
-use super::unpack20::Unpack20;
 use super::window::{MARGIN, Window};
 use crate::error::{Error, Result};
 
@@ -40,11 +40,7 @@ pub struct Unpacker {
 /// the data that can actually be referenced.
 pub fn window_size(dict: u64, stream_bytes: Option<u64>) -> u64 {
     let useful = match stream_bytes {
-        Some(n) => dict.min(
-            n.saturating_add(2 * MARGIN)
-                .checked_next_power_of_two()
-                .unwrap_or(u64::MAX),
-        ),
+        Some(n) => dict.min(n.saturating_add(2 * MARGIN).checked_next_power_of_two().unwrap_or(u64::MAX)),
         None => dict,
     };
     useful.max(MIN_WINDOW)
@@ -52,34 +48,20 @@ pub fn window_size(dict: u64, stream_bytes: Option<u64>) -> u64 {
 
 impl Unpacker {
     pub fn new(codec: Codec, max_memory: u64) -> Self {
-        Unpacker {
-            win: None,
-            v5: None,
-            v3: None,
-            v2: None,
-            codec,
-            max_memory,
-            failed: false,
-        }
+        Unpacker { win: None, v5: None, v3: None, v2: None, codec, max_memory, failed: false }
     }
 
     /// Prepares for the next file. `solid` continues the previous file's
     /// stream; `window` is the dictionary size it needs.
     pub fn begin(&mut self, solid: bool, window: u64, size: Option<u64>) -> Result<()> {
         if solid && self.failed {
-            return Err(Error::corrupt(
-                "RAR data: an earlier file of this solid archive is damaged",
-            ));
+            return Err(Error::corrupt("RAR data: an earlier file of this solid archive is damaged"));
         }
         self.failed = false;
         if window > self.max_memory {
-            return Err(Error::limit(format!(
-                "the RAR dictionary ({} MiB) is larger than the memory limit",
-                window >> 20
-            )));
+            return Err(Error::limit(format!("the RAR dictionary ({} MiB) is larger than the memory limit", window >> 20)));
         }
-        let window =
-            usize::try_from(window).map_err(|_| Error::limit("RAR dictionary too large"))?;
+        let window = usize::try_from(window).map_err(|_| Error::limit("RAR dictionary too large"))?;
         match self.win.as_mut() {
             Some(w) if w.size() >= window => {}
             Some(w) if solid => w.grow(window)?,
@@ -92,14 +74,9 @@ impl Unpacker {
             Codec::Rar5 => self.v5.get_or_insert_with(Unpack5::new).start_file(solid),
             Codec::Rar29 => {
                 let mem = self.max_memory;
-                self.v3
-                    .get_or_insert_with(|| Unpack3::new(mem))
-                    .start_file(solid);
+                self.v3.get_or_insert_with(|| Unpack3::new(mem)).start_file(solid);
             }
-            Codec::Rar20 => self
-                .v2
-                .get_or_insert_with(Unpack20::new)
-                .start_file(solid, size),
+            Codec::Rar20 => self.v2.get_or_insert_with(Unpack20::new).start_file(solid, size),
         }
         Ok(())
     }
@@ -124,27 +101,12 @@ impl Unpacker {
     }
 
     fn step_inner(&mut self, inp: &mut Input) -> Result<()> {
-        let win = self
-            .win
-            .as_mut()
-            .ok_or_else(|| Error::corrupt("RAR decoder not started"))?;
+        let win = self.win.as_mut().ok_or_else(|| Error::corrupt("RAR decoder not started"))?;
         let not_started = || Error::corrupt("RAR decoder not started");
         match self.codec {
-            Codec::Rar5 => self
-                .v5
-                .as_mut()
-                .ok_or_else(not_started)?
-                .decode(inp, win, BUDGET),
-            Codec::Rar29 => self
-                .v3
-                .as_mut()
-                .ok_or_else(not_started)?
-                .decode(inp, win, BUDGET),
-            Codec::Rar20 => self
-                .v2
-                .as_mut()
-                .ok_or_else(not_started)?
-                .decode(inp, win, BUDGET),
+            Codec::Rar5 => self.v5.as_mut().ok_or_else(not_started)?.decode(inp, win, BUDGET),
+            Codec::Rar29 => self.v3.as_mut().ok_or_else(not_started)?.decode(inp, win, BUDGET),
+            Codec::Rar20 => self.v2.as_mut().ok_or_else(not_started)?.decode(inp, win, BUDGET),
         }
     }
 }
@@ -160,40 +122,26 @@ pub struct FileDecoder<'a> {
 
 impl<'a> FileDecoder<'a> {
     pub fn new(up: &'a mut Unpacker, input: Box<dyn Read + Send>, expected: Option<u64>) -> Self {
-        FileDecoder {
-            up,
-            inp: Input::new(input),
-            expected,
-            produced: 0,
-            done: false,
-        }
+        FileDecoder { up, inp: Input::new(input), expected, produced: 0, done: false }
     }
 
     /// One read from the window, decoding more when needed.
     fn pull(&mut self, buf: &mut [u8]) -> Result<usize> {
         loop {
             let finished = self.up.finished();
-            let win = self
-                .up
-                .win
-                .as_mut()
-                .ok_or_else(|| Error::corrupt("RAR decoder not started"))?;
+            let win = self.up.win.as_mut().ok_or_else(|| Error::corrupt("RAR decoder not started"))?;
             let n = win.deliver(buf);
             if n > 0 {
                 return Ok(n);
             }
             if finished {
                 if win.has_unfinished_filter() {
-                    return Err(Error::corrupt(
-                        "RAR data: a filter block runs past the end of the file",
-                    ));
+                    return Err(Error::corrupt("RAR data: a filter block runs past the end of the file"));
                 }
                 return Ok(0);
             }
             if win.space() == 0 {
-                return Err(Error::corrupt(
-                    "RAR data: filter block larger than the dictionary",
-                ));
+                return Err(Error::corrupt("RAR data: filter block larger than the dictionary"));
             }
             self.up.step(&mut self.inp)?;
             if let Some(e) = self.inp.take_error() {
@@ -229,9 +177,7 @@ impl Read for FileDecoder<'_> {
             return Ok(0);
         }
         let want = match self.expected {
-            Some(e) => buf
-                .len()
-                .min((e - self.produced).min(usize::MAX as u64) as usize),
+            Some(e) => buf.len().min((e - self.produced).min(usize::MAX as u64) as usize),
             None => buf.len(),
         };
         if want == 0 {
@@ -245,10 +191,7 @@ impl Read for FileDecoder<'_> {
             if let Some(e) = self.expected
                 && self.produced < e
             {
-                return Err(Error::corrupt(
-                    "RAR data ends before the end of the file (damaged or incomplete archive)",
-                )
-                .into());
+                return Err(Error::corrupt("RAR data ends before the end of the file (damaged or incomplete archive)").into());
             }
             return Ok(0);
         }

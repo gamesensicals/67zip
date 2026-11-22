@@ -4,38 +4,22 @@ use std::fs;
 use std::process::Command;
 
 use common::*;
-use zip67_core::create::{Method, create};
-use zip67_core::extract::{Selection, test as test_archive};
-use zip67_core::{OpenOptions, Password, Progress, open};
+use zip67_core::create::{create, Method};
+use zip67_core::extract::{test as test_archive, Selection};
+use zip67_core::{open, OpenOptions, Password, Progress};
 
 fn roundtrip(t: &str, method: Option<Method>, password: Option<&str>) {
     let tmp = tempfile::tempdir().unwrap();
     let src = make_tree(tmp.path());
     let archive = tmp.path().join(format!("out.{t}"));
-    let report = create(
-        &archive,
-        &[src.clone()],
-        &opts(t, method, password),
-        &Progress::new(),
-    )
-    .unwrap();
+    let report = create(&archive, &[src.clone()], &opts(t, method, password), &Progress::new()).unwrap();
     assert!(report.files >= 6, "{t}: {report:?}");
 
     // List
-    let mut r = open(
-        &archive,
-        &OpenOptions {
-            password: password.map(Password::new),
-            ..Default::default()
-        },
-    )
-    .unwrap();
+    let mut r = open(&archive, &OpenOptions { password: password.map(Password::new), ..Default::default() }).unwrap();
     assert_eq!(r.archive_type().id(), t);
     let names: Vec<String> = r.entries().iter().map(|e| e.path.clone()).collect();
-    assert!(
-        names.contains(&"data/sub/random.bin".to_string()),
-        "{t}: {names:?}"
-    );
+    assert!(names.contains(&"data/sub/random.bin".to_string()), "{t}: {names:?}");
     // Test
     let rep = test_archive(r.as_mut(), &Selection::All, &Progress::new()).unwrap();
     assert!(rep.errors.is_empty(), "{t}: {:?}", rep.errors);
@@ -53,11 +37,7 @@ fn roundtrip(t: &str, method: Option<Method>, password: Option<&str>) {
             cmd.arg(format!("-p{p}"));
         }
         let o = cmd.output().unwrap();
-        assert!(
-            o.status.success(),
-            "7-Zip rejected our {t}: {}",
-            String::from_utf8_lossy(&o.stdout)
-        );
+        assert!(o.status.success(), "7-Zip rejected our {t}: {}", String::from_utf8_lossy(&o.stdout));
     }
 }
 
@@ -87,13 +67,7 @@ fn zip_zstd() {
     let tmp = tempfile::tempdir().unwrap();
     let src = make_tree(tmp.path());
     let archive = tmp.path().join("z.zip");
-    create(
-        &archive,
-        &[src.clone()],
-        &opts("zip", Some(Method::Zstd), None),
-        &Progress::new(),
-    )
-    .unwrap();
+    create(&archive, &[src.clone()], &opts("zip", Some(Method::Zstd), None), &Progress::new()).unwrap();
     let out = tmp.path().join("x");
     extract_all(&archive, &out, None);
     assert_same_tree(&src, &out.join("data"));
@@ -123,13 +97,7 @@ fn tar_zst() {
     let tmp = tempfile::tempdir().unwrap();
     let src = make_tree(tmp.path());
     let archive = tmp.path().join("out.tar.zst");
-    create(
-        &archive,
-        &[src.clone()],
-        &opts("tar.zst", None, None),
-        &Progress::new(),
-    )
-    .unwrap();
+    create(&archive, &[src.clone()], &opts("tar.zst", None, None), &Progress::new()).unwrap();
     let out = tmp.path().join("x");
     extract_all(&archive, &out, None);
     assert_same_tree(&src, &out.join("data"));
@@ -140,13 +108,7 @@ fn tar_lzip_and_lzma() {
         let tmp = tempfile::tempdir().unwrap();
         let src = make_tree(tmp.path());
         let archive = tmp.path().join(format!("out.{t}"));
-        create(
-            &archive,
-            &[src.clone()],
-            &opts(t, None, None),
-            &Progress::new(),
-        )
-        .unwrap();
+        create(&archive, &[src.clone()], &opts(t, None, None), &Progress::new()).unwrap();
         let out = tmp.path().join("x");
         extract_all(&archive, &out, None);
         assert_same_tree(&src, &out.join("data"));
@@ -160,23 +122,13 @@ fn single_file_formats() {
         let f = tmp.path().join("notes.txt");
         fs::write(&f, b"some text ".repeat(20_000)).unwrap();
         let archive = tmp.path().join(format!("notes.txt.{t}"));
-        create(
-            &archive,
-            &[f.clone()],
-            &opts(t, None, None),
-            &Progress::new(),
-        )
-        .unwrap();
+        create(&archive, &[f.clone()], &opts(t, None, None), &Progress::new()).unwrap();
         let r = open(&archive, &OpenOptions::default()).unwrap();
         assert_eq!(r.archive_type().id(), t);
         assert_eq!(r.entries()[0].path, "notes.txt");
         let out = tmp.path().join("x");
         extract_all(&archive, &out, None);
-        assert_eq!(
-            fs::read(out.join("notes.txt")).unwrap(),
-            fs::read(&f).unwrap(),
-            "{t}"
-        );
+        assert_eq!(fs::read(out.join("notes.txt")).unwrap(), fs::read(&f).unwrap(), "{t}");
         if t != "zst" && t != "lz" {
             if let Some(sz) = seven_zip() {
                 let o = Command::new(sz).arg("t").arg(&archive).output().unwrap();
@@ -191,28 +143,11 @@ fn wrong_password_is_detected() {
     let tmp = tempfile::tempdir().unwrap();
     let src = make_tree(tmp.path());
     let archive = tmp.path().join("p.zip");
-    create(
-        &archive,
-        &[src],
-        &opts("zip", None, Some("right")),
-        &Progress::new(),
-    )
-    .unwrap();
-    let mut r = open(
-        &archive,
-        &OpenOptions {
-            password: Some(Password::new("wrong")),
-            ..Default::default()
-        },
-    )
-    .unwrap();
+    create(&archive, &[src], &opts("zip", None, Some("right")), &Progress::new()).unwrap();
+    let mut r = open(&archive, &OpenOptions { password: Some(Password::new("wrong")), ..Default::default() }).unwrap();
     let rep = test_archive(r.as_mut(), &Selection::All, &Progress::new()).unwrap();
     assert!(!rep.errors.is_empty());
-    assert!(
-        rep.errors.iter().all(|(_, e)| e.contains("wrong password")),
-        "{:?}",
-        rep.errors
-    );
+    assert!(rep.errors.iter().all(|(_, e)| e.contains("wrong password")), "{:?}", rep.errors);
 }
 
 /// Archives made by real 7-Zip must open and extract identically.
@@ -226,35 +161,15 @@ fn reads_archives_made_by_7zip() {
         ("b.zip", &["-tzip", "-mm=BZip2"], None),
         ("c.zip", &["-tzip", "-mm=LZMA"], None),
         ("d.zip", &["-tzip", "-mm=PPMd"], None),
-        (
-            "e.zip",
-            &["-tzip", "-mem=AES256", "-psecret"],
-            Some("secret"),
-        ),
-        (
-            "f.zip",
-            &["-tzip", "-mem=ZipCrypto", "-psecret"],
-            Some("secret"),
-        ),
+        ("e.zip", &["-tzip", "-mem=AES256", "-psecret"], Some("secret")),
+        ("f.zip", &["-tzip", "-mem=ZipCrypto", "-psecret"], Some("secret")),
         ("g.tar", &["-ttar"], None),
         ("h.zip", &["-tzip", "-mx0"], None),
     ];
     for (name, args, pw) in cases {
         let archive = tmp.path().join(name);
-        let o = Command::new(sz)
-            .current_dir(tmp.path())
-            .arg("a")
-            .args(*args)
-            .arg("-snl")
-            .arg(&archive)
-            .arg("data")
-            .output()
-            .unwrap();
-        assert!(
-            o.status.success(),
-            "7z failed for {name}: {}",
-            String::from_utf8_lossy(&o.stdout)
-        );
+        let o = Command::new(sz).current_dir(tmp.path()).arg("a").args(*args).arg("-snl").arg(&archive).arg("data").output().unwrap();
+        assert!(o.status.success(), "7z failed for {name}: {}", String::from_utf8_lossy(&o.stdout));
         let out = tmp.path().join(format!("x-{name}"));
         let rep = extract_all(&archive, &out, *pw);
         assert!(rep.errors.is_empty(), "{name}: {:?}", rep.errors);
@@ -264,13 +179,7 @@ fn reads_archives_made_by_7zip() {
     let tar = tmp.path().join("g.tar");
     for (t, ext) in [("gzip", "gz"), ("bzip2", "bz2"), ("xz", "xz")] {
         let archive = tmp.path().join(format!("g.tar.{ext}"));
-        let o = Command::new(sz)
-            .arg("a")
-            .arg(format!("-t{t}"))
-            .arg(&archive)
-            .arg(&tar)
-            .output()
-            .unwrap();
+        let o = Command::new(sz).arg("a").arg(format!("-t{t}")).arg(&archive).arg(&tar).output().unwrap();
         assert!(o.status.success());
         let r = open(&archive, &OpenOptions::default()).unwrap();
         assert_eq!(r.archive_type().id(), format!("tar.{ext}"));
