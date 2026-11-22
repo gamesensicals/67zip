@@ -491,7 +491,7 @@ fn info() {
         ("gz bz2", "yes", "yes", "single files"),
         ("xz zst", "yes", "yes", "single files"),
         ("lzma lz", "yes", "yes", "single files"),
-        ("iso", "yes", "no", "ISO 9660 images"),
+        ("iso", "yes", "no", "ISO 9660, Rock Ridge, Joliet"),
         (".001", "yes", "yes", "split volumes of any format"),
     ];
     for (t, r, w, n) in rows {

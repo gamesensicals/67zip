@@ -29,7 +29,7 @@ modern interface that looks the same on every distribution.
 | tar | yes | yes | ustar, PAX, GNU long names; plain or with gz, bz2, xz, zst, lz, lzma |
 | gz, bz2, xz, zst, lzma, lz | yes | yes | single files |
 | `.001` split archives | yes | yes | any format; create with "Split into" or `-v100m` |
-| iso | planned | no | |
+| iso | yes | no | ISO 9660 with Rock Ridge (permissions, links) and Joliet (Unicode names) |
 
 ## Install
 

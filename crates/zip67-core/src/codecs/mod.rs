@@ -4,6 +4,7 @@
 pub mod bz2;
 pub mod deflate;
 pub mod gzip;
+pub mod lzma2;
 pub mod parallel;
 pub mod zstd;
 

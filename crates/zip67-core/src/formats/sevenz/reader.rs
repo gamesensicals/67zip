@@ -295,6 +295,14 @@ impl ArchiveReader for SevenZReader {
             members.sort();
             let folder = &self.streams.folders[fi];
             let encrypted = folder.is_encrypted();
+            if folder.unpack_size() > self.limits.max_total_size {
+                for &(_, i) in &members {
+                    if selected(&self.entries[i]) {
+                        visitor.entry_error(&self.entries[i], Error::limit("block is larger than the size limit"))?;
+                    }
+                }
+                continue;
+            }
             if encrypted && self.password.is_none() {
                 for &(_, i) in &members {
                     if selected(&self.entries[i]) {

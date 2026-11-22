@@ -279,11 +279,7 @@ fn coder_reader(id: &[u8], props: &[u8], inputs: Vec<BoxR>, size: u64, ctx: &Dec
             if size <= u64::from(d) * 2 || u64::from(d) * threads > lim.max_decoder_memory {
                 threads = 1;
             }
-            if threads > 1 {
-                Box::new(lzma_rust2::Lzma2ReaderMt::new(input, d, None, threads as u32))
-            } else {
-                Box::new(lzma_rust2::Lzma2Reader::new(input, d, None))
-            }
+            crate::codecs::lzma2::decoder(input, d, threads as usize)
         }
         ID_LZMA => {
             if props.len() < 5 {
