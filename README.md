@@ -49,8 +49,10 @@ The script installs:
 
 Remove everything with `./install.sh --uninstall`.
 
-Packaging files are included for a `.deb` (`cargo deb -p zip67-gui`) and for
-Flatpak (`packaging/flatpak/`).
+Packaging files are included for a `.deb` (`cargo deb -p zip67-gui`), for
+Flatpak (`packaging/flatpak/`) and for an AppImage
+(`packaging/appimage/build.sh`, which downloads `appimagetool`; build it on
+an older distro so it runs on more systems).
 
 On distributions without a desktop, the app needs `libxkbcommon-x11` (or
 Wayland) and working OpenGL or Vulkan drivers, as any desktop provides.
