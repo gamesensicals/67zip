@@ -1,5 +1,10 @@
 # SAVE: 67zip (gamesensicals/67zip)
 
+> **Status 2026-11-22: published.** The user approved; the work is on
+> `gamesensicals/67zip` branch `claude/67zip-gui-linux-k401kq` (MIT
+> license). Further work (RAR reading, AppImage CI job) continues there.
+> This branch can be deleted once the user has checked the work.
+
 Saved work for the 67zip project. The project repository `gamesensicals/67zip`
 was empty when this started; nothing is published there yet. When the work is
 finished **and the user approves**, it moves to `gamesensicals/67zip` branch

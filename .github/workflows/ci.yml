@@ -30,6 +30,22 @@ jobs:
       - name: Clippy
         run: cargo clippy --workspace --locked -- -D clippy::correctness -D clippy::suspicious
 
+  appimage:
+    # An AppImage runs on distros with the same or newer glibc than the
+    # build machine, so build on an older Ubuntu for wider reach.
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build AppImage
+        run: ./packaging/appimage/build.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: 67zip-x86_64.AppImage
+          path: target/appimage/67zip-x86_64.AppImage
+          if-no-files-found: error
+
   audit:
     runs-on: ubuntu-24.04
     steps:

@@ -177,6 +177,5 @@ compatibility tests run against real 7-Zip as well.
 
 ## License
 
-67zip is licensed under either of [MIT](LICENSE-MIT) or
-[Apache-2.0](LICENSE-APACHE), at your option. The bundled Inter font is
+67zip is licensed under the [MIT license](LICENSE). The bundled Inter font is
 under the SIL Open Font License (`crates/zip67-gui/resources/fonts`).

@@ -593,7 +593,7 @@ impl App {
                             .align_y(Alignment::Center),
                         label("A fast, secure archive manager for Linux. Our own engine is written in safe Rust: 7z, zip, tar and more."),
                         row![icon(Icon::Shield, 18.0), text(sandbox).size(13)].spacing(8),
-                        muted("License: MIT OR Apache-2.0. Interface font: Inter (SIL Open Font License)."),
+                        muted("License: MIT. Interface font: Inter (SIL Open Font License)."),
                         row![space().width(Length::Fill), primary("Close", Some(Message::CloseModal))],
                     ]
                     .spacing(14)

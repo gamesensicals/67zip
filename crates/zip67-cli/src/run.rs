@@ -19,7 +19,7 @@ const EXIT_USAGE: i32 = 7;
 const EXIT_STOPPED: i32 = 255;
 
 fn banner() {
-    println!("\n67zip {} : MIT OR Apache-2.0 : https://github.com/gamesensicals/67zip\n", zip67_core::VERSION);
+    println!("\n67zip {} : MIT license : https://github.com/gamesensicals/67zip\n", zip67_core::VERSION);
 }
 
 pub fn main(raw: Vec<String>) -> i32 {

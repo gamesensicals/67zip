@@ -4,7 +4,7 @@
   <name>67zip</name>
   <summary>Fast and secure archive manager</summary>
   <metadata_license>CC0-1.0</metadata_license>
-  <project_license>MIT OR Apache-2.0</project_license>
+  <project_license>MIT</project_license>
   <description>
     <p>67zip opens, creates and extracts 7z, zip, tar (gz, bz2, xz, zst, lz) and other archives.
     Its own archive engine is written in safe Rust and runs in a sandbox, so a malicious archive
