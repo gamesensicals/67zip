@@ -191,6 +191,7 @@ Commands
   h  Calculate hashes of files: 67z h [-scrcSHA256] files...
   b  Benchmark
   i  Show supported formats
+  update [--check]  Look for a newer 67zip (an AppImage also installs it)
 
 Switches
   -t{type}      Archive type: 7z, zip, tar, tar.gz, tar.bz2, tar.xz, tar.zst,

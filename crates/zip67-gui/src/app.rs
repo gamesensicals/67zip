@@ -165,6 +165,11 @@ pub struct App {
     pub exe: PathBuf,
     pub places: Vec<(String, PathBuf, crate::icons::Icon)>,
     pub hover_drop: bool,
+    /// How this copy was installed (AppImage, Flatpak, package, own build).
+    pub install: zip67_update::Install,
+    pub update: crate::update::UpdateState,
+    /// "Later" was pressed on the update bar.
+    pub update_bar_hidden: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -210,6 +215,16 @@ pub enum Message {
     Hash(Option<HashKind>),
     Benchmark,
     RunBenchmark,
+    // updates
+    CheckUpdates,
+    UpdateDownload,
+    UpdateNotes,
+    UpdateSkip,
+    UpdateLater,
+    UpdateCancel,
+    UpdateRestart,
+    UpdateShowFile,
+    SetAutoUpdate(bool),
     OpenSettings,
     About,
     CloseMenu,
@@ -351,7 +366,24 @@ impl App {
             exe,
             places: platform::places(),
             hover_drop: false,
+            install: zip67_update::Install::detect(),
+            update: crate::update::UpdateState::Idle,
+            update_bar_hidden: false,
         };
+        #[cfg(debug_assertions)]
+        if let Ok(stage) = std::env::var("ZIP67_UPDATE_DEMO") {
+            app.update = crate::update::demo(&stage);
+        }
+        // At most one automatic update check a day, in the background.
+        if app.settings.auto_update && app.install.checks_for_updates() && !app.update.busy() && matches!(app.update, crate::update::UpdateState::Idle) {
+            let now = jiff::Timestamp::now().as_second();
+            let last = app.settings.last_update_check;
+            if now - last >= 86_400 || now < last {
+                app.settings.last_update_check = now;
+                app.settings.save();
+                app.update = crate::update::start_check(false);
+            }
+        }
         let _ = app.load_dir(&start);
         let mut tasks = vec![iced::system::theme().map(|m| Message::SystemDark(m == iced::theme::Mode::Dark))];
         if let Some(p) = launch.path.filter(|p| p.is_file()) {
@@ -413,7 +445,7 @@ impl App {
             iced::system::theme_changes().map(|m| Message::SystemDark(m == iced::theme::Mode::Dark)),
             Subscription::run(accent_stream),
         ];
-        if self.job.is_some() || self.fs_job.is_some() || self.toast.is_some() {
+        if self.job.is_some() || self.fs_job.is_some() || self.toast.is_some() || self.update.busy() {
             subs.push(iced::time::every(Duration::from_millis(60)).map(|_| Message::Tick));
         }
         if !self.watches.is_empty() {
@@ -1772,6 +1804,73 @@ impl App {
                 self.modal = None;
             }
             Message::CopyText(t) => return iced::clipboard::write(t),
+            // ---- updates
+            Message::CheckUpdates => {
+                if !self.update.busy() && self.install.checks_for_updates() {
+                    self.update = crate::update::start_check(true);
+                    self.update_bar_hidden = false;
+                }
+            }
+            Message::UpdateDownload => {
+                if let crate::update::UpdateState::Available { manifest } = &self.update {
+                    self.update = crate::update::start_download(&self.install, manifest);
+                    self.update_bar_hidden = false;
+                }
+            }
+            Message::UpdateNotes => {
+                if let crate::update::UpdateState::Available { manifest } = &self.update {
+                    let notes = if manifest.notes.trim().is_empty() { vec!["No release notes.".to_string()] } else { manifest.notes.lines().map(zip67_core::util::safe_display).collect() };
+                    self.modal = Some(Modal::Report(ReportView {
+                        title: format!("What's new in 67zip {}", manifest.version),
+                        summary: format!(
+                            "Released {}. Signed with the 67zip release key {}.",
+                            zip67_core::util::safe_display(&manifest.date),
+                            zip67_update::KEY_ID
+                        ),
+                        lines: notes,
+                        ok: true,
+                    }));
+                }
+            }
+            Message::UpdateSkip => {
+                if let crate::update::UpdateState::Available { manifest } = &self.update {
+                    self.settings.skipped_version = Some(manifest.version.to_string());
+                    self.settings.save();
+                    self.update = crate::update::UpdateState::Idle;
+                }
+            }
+            Message::UpdateLater => {
+                self.update_bar_hidden = true;
+                if matches!(self.update, crate::update::UpdateState::Failed(_) | crate::update::UpdateState::Saved { .. } | crate::update::UpdateState::Manual { .. }) {
+                    self.update = crate::update::UpdateState::Idle;
+                }
+            }
+            Message::UpdateCancel => self.update.cancel(),
+            Message::UpdateRestart => {
+                if let crate::update::UpdateState::Installed { appimage, .. } = &self.update {
+                    let started = std::process::Command::new(appimage)
+                        .stdin(std::process::Stdio::null())
+                        .stdout(std::process::Stdio::null())
+                        .stderr(std::process::Stdio::null())
+                        .spawn();
+                    match started {
+                        Ok(_) => return iced::exit(),
+                        Err(e) => self.toast(format!("Couldn't start the new version: {e}"), true),
+                    }
+                }
+            }
+            Message::UpdateShowFile => {
+                if let crate::update::UpdateState::Saved { file, .. } = &self.update
+                    && let Some(dir) = file.parent()
+                {
+                    let dir = dir.to_path_buf();
+                    return self.update_inner(Message::GoTo(dir));
+                }
+            }
+            Message::SetAutoUpdate(b) => {
+                self.settings.auto_update = b;
+                self.settings.save();
+            }
             // ---- add form
             Message::AddArchive(s) => self.with_add(|f| f.archive = s),
             Message::AddFormat(fmt) => self.with_add(|f| {
@@ -1915,6 +2014,7 @@ impl App {
             Message::SetScale(c) => self.with_settings(|s| s.scale = c.0 as f32 / 100.0),
             // ---- jobs
             Message::Tick => {
+                self.update.poll(self.settings.skipped_version.as_deref());
                 if let Some((_, at, _)) = &self.toast {
                     if at.elapsed() > Duration::from_secs(5) {
                         self.toast = None;

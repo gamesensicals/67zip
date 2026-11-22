@@ -163,6 +163,16 @@ pub fn warning_box(theme: &Theme) -> container::Style {
     }
 }
 
+/// A bar in the accent colour, e.g. "a new version is available".
+pub fn info_box(theme: &Theme) -> container::Style {
+    let c = theme.palette().primary;
+    container::Style {
+        background: Some(Background::Color(with_alpha(c, 0.12))),
+        border: Border { color: with_alpha(c, 0.45), width: 1.0, radius: 8.0.into() },
+        ..Default::default()
+    }
+}
+
 pub fn address(theme: &Theme) -> container::Style {
     let bg = if is_dark(theme) { rgb(0x1b, 0x1e, 0x24) } else { rgb(0xf2, 0xf4, 0xf7) };
     container::Style {

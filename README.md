@@ -89,6 +89,33 @@ Wayland) and working OpenGL or Vulkan drivers, as any desktop provides.
 - **Deleting** on disk moves items to the desktop Trash, which you can turn
   off in Settings.
 
+## Updates
+
+67zip checks for a new version once a day and shows a bar when there is
+one: **Update now** (AppImage) or **Download**, **What's new**, **Skip this
+version**. Turn it off in Settings; **Check for updates** is in the About
+box, and `67z update --check` / `67z update` do the same on the command
+line.
+
+- **What is sent:** one request to GitHub for the newest release's
+  `latest.json`, with the user agent `67zip/<version>`. Nothing else: no
+  ID, no statistics.
+- **Signed releases:** `latest.json` lists every package with its size and
+  SHA-256 hash and is signed with the 67zip release key (minisign,
+  key ID `269FF0C6C87BEF0F`, public key in
+  [`data/67zip-update.pub`](data/67zip-update.pub), built into the app).
+  67zip uses an update only if the signature and the hash match, so a
+  hijacked server or network can't hand you a different program. Older
+  versions are never offered.
+- **Installing:** an AppImage replaces itself in one step after the check
+  and asks you to restart. A `.deb` install gets the verified `.deb` in
+  Downloads (`sudo apt install ./67zip_….deb`). A build from source gets a
+  verified AppImage in Downloads, or update with `git pull && ./install.sh`.
+  Flatpak doesn't check: Flathub updates it. Nothing downloaded is ever
+  run by itself.
+- Check a release file yourself:
+  `minisign -Vm 67zip-0.1.1-x86_64.AppImage -P RWQP73vIxvCfJvPJDeYUb598zfVDB0vMJkxUFcLDvZHUHdQflwNXcLyM`
+
 ## Command line: `67z`
 
 `67z` follows 7-Zip's `7z` syntax:
@@ -107,6 +134,7 @@ Wayland) and working OpenGL or Vulkan drivers, as any desktop provides.
 67z rn archive.7z a.txt b.txt         # rename inside an archive
 67z h -scrcSHA256 file.iso            # checksums (CRC32, CRC64, SHA-1/256/512, BLAKE3, MD5)
 67z b                                 # benchmark
+67z update --check                    # is there a newer 67zip?
 ```
 
 Run `67z --help` for all switches. Exit codes match 7-Zip: 0 means OK,
@@ -226,6 +254,7 @@ rar5enc`), which 7-Zip reads too.
 | `crates/zip67-worker` | the sandbox, the worker process and its protocol |
 | `crates/zip67-cli` | the `67z` command line tool |
 | `crates/zip67-gui` | the `67zip` app (built with [iced](https://iced.rs)) |
+| `crates/zip67-update` | signed update checks and downloads (not used by the worker) |
 | `fuzz/` | fuzz targets (`cargo +nightly fuzz run sevenz`) |
 | `data/`, `packaging/` | desktop integration and packages |
 

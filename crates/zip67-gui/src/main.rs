@@ -10,6 +10,7 @@ mod listing;
 mod platform;
 mod settings;
 mod style;
+mod update;
 mod view;
 
 fn main() -> iced::Result {

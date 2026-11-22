@@ -29,6 +29,9 @@ fn banner() {
 }
 
 pub fn main(raw: Vec<String>) -> i32 {
+    if raw.first().map(String::as_str) == Some("update") {
+        return self_update(&raw[1..]);
+    }
     let a = match args::parse(raw) {
         Ok(a) => a,
         Err(e) => {
@@ -560,4 +563,92 @@ fn info() {
         println!("  {t:<9} {r:<6} {w:<10} {n}");
     }
     println!("\nHashes: {}", HashKind::ALL.iter().map(|k| k.name()).collect::<Vec<_>>().join(", "));
+}
+
+/// `67z update [--check]`: checks for a newer 67zip; an AppImage replaces
+/// itself, other installations get the verified package in Downloads.
+fn self_update(args: &[String]) -> i32 {
+    use zip67_update::{Check, Client, Install, Version};
+    let check_only = match args {
+        [] => false,
+        [a] if a == "--check" => true,
+        _ => {
+            eprintln!("67z: usage: 67z update [--check]");
+            return EXIT_USAGE;
+        }
+    };
+    let install = Install::detect();
+    if !install.checks_for_updates() {
+        println!("{}", install.how_to_update(None));
+        return 0;
+    }
+    let current = Version::current();
+    let client = Client::new();
+    let m = match client.check(current) {
+        Ok(Check::UpToDate(latest)) => {
+            println!("67zip {current} is up to date (newest release: {latest}).");
+            return 0;
+        }
+        Ok(Check::Available(m)) => m,
+        Err(e) => {
+            eprintln!("67z: {}", safe_display(&e.to_string()));
+            return 2;
+        }
+    };
+    println!("67zip {} is available (you have {current}), released {}.", m.version, safe_display(&m.date));
+    for line in m.notes.lines().take(40) {
+        println!("  {}", safe_display(line));
+    }
+    if check_only {
+        return 0;
+    }
+    let Some(pkg) = install.package_kind().and_then(|k| m.package(&k).cloned()) else {
+        println!("{}", install.how_to_update(None));
+        println!("Releases: {}", zip67_update::RELEASES_PAGE);
+        return 0;
+    };
+    let dir = zip67_update::download_folder(&install);
+    let tty = std::io::IsTerminal::is_terminal(&std::io::stderr());
+    let last = std::sync::atomic::AtomicU64::new(u64::MAX);
+    let progress = |done: u64, total: u64| {
+        let pct = done.saturating_mul(100) / total.max(1);
+        if tty && last.swap(pct, std::sync::atomic::Ordering::Relaxed) != pct {
+            eprint!("\rDownloading {}... {pct:>3}%", pkg.file_name());
+        }
+    };
+    let tmp = match client.download(&pkg, &dir, &progress, &std::sync::atomic::AtomicBool::new(false)) {
+        Ok(t) => t,
+        Err(e) => {
+            eprintln!("\n67z: {}", safe_display(&e.to_string()));
+            return 2;
+        }
+    };
+    if tty {
+        eprintln!();
+    }
+    println!("Download verified: signed by the 67zip release key ({}), SHA-256 matches.", zip67_update::KEY_ID);
+    match &install {
+        Install::AppImage(target) => match zip67_update::install_appimage(&tmp, target) {
+            Ok(()) => {
+                println!("Updated {} to 67zip {}. Restart 67zip to use it.", target.display(), m.version);
+                0
+            }
+            Err(e) => {
+                let _ = std::fs::remove_file(&tmp);
+                eprintln!("67z: couldn't replace the AppImage: {e}");
+                2
+            }
+        },
+        _ => match zip67_update::keep_download(&tmp, &dir, pkg.file_name()) {
+            Ok(path) => {
+                println!("{}", install.how_to_update(Some(&path)));
+                0
+            }
+            Err(e) => {
+                let _ = std::fs::remove_file(&tmp);
+                eprintln!("67z: {e}");
+                2
+            }
+        },
+    }
 }

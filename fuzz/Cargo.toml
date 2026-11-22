@@ -11,6 +11,7 @@ path = "src/lib.rs"
 cargo-fuzz = true
 
 [dependencies]
+zip67-update = { path = "../crates/zip67-update" }
 libfuzzer-sys = "0.4"
 zip67-core = { path = "../crates/zip67-core" }
 
@@ -60,5 +61,11 @@ doc = false
 [[bin]]
 name = "udf"
 path = "fuzz_targets/udf.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "update_manifest"
+path = "fuzz_targets/update_manifest.rs"
 test = false
 doc = false

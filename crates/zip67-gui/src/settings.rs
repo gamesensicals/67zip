@@ -29,6 +29,12 @@ pub struct Settings {
     /// Tell when a file from an encrypted archive had to be decrypted into
     /// a temporary folder on a disk (no in-memory folder available).
     pub warn_temp_on_disk: bool,
+    /// Look for a new version once a day.
+    pub auto_update: bool,
+    /// Unix time of the last automatic check.
+    pub last_update_check: i64,
+    /// A version the user doesn't want to hear about.
+    pub skipped_version: Option<String>,
 }
 
 impl Default for Settings {
@@ -46,6 +52,9 @@ impl Default for Settings {
             favorites: Vec::new(),
             scale: 1.0,
             warn_temp_on_disk: true,
+            auto_update: true,
+            last_update_check: 0,
+            skipped_version: None,
         }
     }
 }
@@ -70,5 +79,23 @@ impl Settings {
                 let _ = std::fs::rename(tmp, p);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Settings;
+
+    #[test]
+    fn older_settings_files_get_the_new_defaults() {
+        // A settings file from before the update checker existed.
+        let s: Settings = serde_json::from_str(r#"{"theme":"Dark","show_hidden":true}"#).unwrap();
+        assert!(s.show_hidden && s.auto_update && s.warn_temp_on_disk);
+        assert_eq!((s.last_update_check, s.skipped_version), (0, None));
+        // And the new fields survive a save and load.
+        let mut s = Settings { auto_update: false, last_update_check: 1_800_000_000, skipped_version: Some("0.1.2".into()), ..Settings::default() };
+        s = serde_json::from_slice(&serde_json::to_vec(&s).unwrap()).unwrap();
+        assert!(!s.auto_update);
+        assert_eq!((s.last_update_check, s.skipped_version.as_deref()), (1_800_000_000, Some("0.1.2")));
     }
 }

@@ -67,7 +67,11 @@ fn input<'a>(placeholder: &'a str, value: &'a str, on: impl Fn(String) -> Messag
 
 impl App {
     pub fn view(&self) -> Element<'_, Message> {
-        let main = column![self.view_toolbar(), self.view_address(), row![self.view_sidebar(), self.view_list()].height(Length::Fill), self.view_status()];
+        let mut main = column![self.view_toolbar(), self.view_address()];
+        if let Some(bar) = self.view_update_bar() {
+            main = main.push(bar);
+        }
+        let main = main.push(row![self.view_sidebar(), self.view_list()].height(Length::Fill)).push(self.view_status());
         let mut layers: Vec<Element<Message>> = vec![main.into()];
         if self.hover_drop {
             let msg = match self.location {
@@ -111,6 +115,51 @@ impl App {
             layers.push(self.modal_frame(content, width));
         }
         stack(layers).into()
+    }
+
+    /// The bar under the address field while an update is found, downloading or done.
+    fn view_update_bar(&self) -> Option<Element<'_, Message>> {
+        use crate::update::UpdateState as U;
+        if self.update_bar_hidden {
+            return None;
+        }
+        let appimage = matches!(self.install, zip67_update::Install::AppImage(_));
+        let mut r = row![icon(Icon::Shield, 18.0)].spacing(10).align_y(Alignment::Center);
+        match &self.update {
+            U::Available { manifest } => {
+                r = r.push(text(format!("67zip {} is available.", manifest.version)).size(13).font(INTER_SEMI));
+                r = r.push(space().width(Length::Fill));
+                r = r.push(secondary("What's new", Message::UpdateNotes));
+                r = r.push(secondary("Skip this version", Message::UpdateSkip));
+                r = r.push(primary(if appimage { "Update now" } else { "Download" }, Some(Message::UpdateDownload)));
+            }
+            U::Downloading { version, done, total, .. } => {
+                let frac = if *total > 0 { (*done as f32 / *total as f32).min(1.0) } else { 0.0 };
+                r = r.push(text(format!("Downloading 67zip {version}… {}%", (frac * 100.0) as u32)).size(13));
+                r = r.push(container(progress_bar(0.0..=1.0, frac).girth(6)).width(Length::Fill));
+                r = r.push(secondary("Cancel", Message::UpdateCancel));
+                return Some(container(container(r).padding(Padding::from([8, 12])).style(style::info_box)).padding(Padding::from([0, 10])).into());
+            }
+            U::Installed { version, .. } => {
+                r = r.push(text(format!("67zip {version} is installed (signature and checksum verified). Restart to use it.")).size(13));
+                r = r.push(space().width(Length::Fill));
+                r = r.push(primary("Restart now", Some(Message::UpdateRestart)));
+            }
+            U::Saved { version, how, .. } => {
+                r = r.push(text(format!("67zip {version} downloaded and verified. {how}")).size(13).width(Length::Fill));
+                r = r.push(secondary("Show in folder", Message::UpdateShowFile));
+            }
+            U::Manual { version, how } => {
+                r = r.push(text(format!("67zip {version} is available. {how}")).size(13).width(Length::Fill));
+            }
+            U::Failed(e) => {
+                r = r.push(text(format!("Update failed: {}", safe_display(e))).size(13).width(Length::Fill));
+                r = r.push(secondary("Try again", Message::CheckUpdates));
+            }
+            U::Idle | U::Checking { .. } | U::Status(_) => return None,
+        }
+        r = r.push(button(icon(Icon::Close, 12.0)).padding(6).style(style::tool_button).on_press(Message::UpdateLater));
+        Some(container(container(r).padding(Padding::from([8, 12])).style(style::info_box)).padding(Padding::from([0, 10])).into())
     }
 
     fn modal_frame<'a>(&'a self, content: Element<'a, Message>, width: f32) -> Element<'a, Message> {
@@ -599,6 +648,23 @@ impl App {
             }
             Modal::Settings => (self.view_settings(), 600.0),
             Modal::About => {
+                use crate::update::UpdateState as U;
+                let status = match &self.update {
+                    U::Checking { .. } => "Checking…".to_string(),
+                    U::Status(s) => safe_display(s),
+                    U::Available { manifest } => format!("67zip {} is available.", manifest.version),
+                    U::Downloading { .. } => "Downloading the update…".into(),
+                    U::Installed { version, .. } => format!("67zip {version} is installed. Restart to use it."),
+                    U::Saved { file, .. } => format!("Saved to {}", safe_display(&file.to_string_lossy())),
+                    U::Manual { version, .. } => format!("67zip {version} is available."),
+                    U::Failed(e) => safe_display(e),
+                    U::Idle => String::new(),
+                };
+                let updates: Element<Message> = if self.install.checks_for_updates() {
+                    row![secondary("Check for updates", Message::CheckUpdates), text(status).size(13)].spacing(10).align_y(Alignment::Center).into()
+                } else {
+                    muted("Updates come from your software centre (Flatpak).")
+                };
                 let sandbox = self.sandbox.as_ref().map(|s| s.describe()).unwrap_or_else(|| "Archives are opened in a separate, locked-down worker process. Open an archive to see the sandbox status.".into());
                 (
                     column![
@@ -607,6 +673,7 @@ impl App {
                             .align_y(Alignment::Center),
                         label("A fast, secure archive manager for Linux. Our own engine is written in safe Rust: 7z, zip, tar and more."),
                         row![icon(Icon::Shield, 18.0), text(sandbox).size(13)].spacing(8),
+                        updates,
                         muted("License: MIT. Interface font: Inter (SIL Open Font License)."),
                         row![space().width(Length::Fill), primary("Close", Some(Message::CloseModal))],
                     ]
@@ -799,6 +866,11 @@ impl App {
                     .on_toggle(Message::SetWarnTempOnDisk)
                     .text_size(13)
             ),
+            if self.install.checks_for_updates() {
+                field("", checkbox(s.auto_update).label("Check for updates once a day (sends nothing but the version number)").on_toggle(Message::SetAutoUpdate).text_size(13))
+            } else {
+                field("", muted("Updates come from your software centre (Flatpak)."))
+            },
             rule::horizontal(1).style(style::rule),
             field("New archives", pick_list(FORMATS, FORMATS.iter().copied().find(|f| f.0 == s.default_format), Message::SetDefaultFormat).text_size(14).padding(Padding::from([7, 10])).style(style::pick).menu_style(style::pick_menu).width(Length::Fill)),
             field("Compression", pick_list(LEVELS, LEVELS.iter().copied().find(|l| l.0 == s.default_level), Message::SetDefaultLevel).text_size(14).padding(Padding::from([7, 10])).style(style::pick).menu_style(style::pick_menu).width(Length::Fill)),

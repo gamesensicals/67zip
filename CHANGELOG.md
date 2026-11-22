@@ -25,6 +25,14 @@
 - Archives inside archives can be changed; the outer archive is updated.
 - Our own multi-core bzip2 decoder.
 - An AppImage build in CI.
+- **Update checks**, once a day (can be turned off) and on demand in the
+  About box or with `67z update --check`. Releases are signed with the
+  67zip release key (minisign, key ID 269FF0C6C87BEF0F); an update is used
+  only if its signature and SHA-256 hash match, never for an older
+  version. AppImages update themselves after asking; `.deb` and
+  source installs get the verified package in Downloads; Flatpak is left
+  to Flathub. The check sends nothing but the version number.
+- Releases are built, signed and published by a GitHub workflow.
 
 ### Changed
 
