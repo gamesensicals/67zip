@@ -131,7 +131,8 @@ glibc (built here: needs glibc 2.39; build on an older distro).
 streams 138k runs clean; 7z and open_any stopped on a 32-byte LeakSanitizer
 report from glibc thread-local bookkeeping in short-lived bz2 decoder
 threads (false positive, not a growing leak), so CI fuzzing now passes
--detect_leaks=0 (memory is still capped by -rss_limit_mb).
+-detect_leaks=0 (memory is still capped by -rss_limit_mb). Re-run with
+that setting: 7z 265k and open_any 47k runs in 10 minutes each, clean.
 Possible polish: drag files *out* of the window (iced does not support it
 yet), RAR reading (offered, not asked).
 
