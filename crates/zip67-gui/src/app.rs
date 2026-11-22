@@ -262,7 +262,15 @@ fn file_name(p: &Path) -> String {
 }
 
 /// Archive name without its archive extension: `photos.tar.gz` -> `photos`.
+/// Never `.`, `..` or empty (a file named `...zip` must not extract into
+/// the parent folder).
 pub fn stem_of(name: &str) -> String {
+    let s = stem_raw(name);
+    let t = s.trim_matches('.');
+    if t.is_empty() || s.contains('/') { format!("{} files", name.replace('/', "_")) } else { s }
+}
+
+fn stem_raw(name: &str) -> String {
     // A part of a split archive is named after the whole archive.
     let logical = zip67_core::source::logical_name_str(name);
     let name = logical.as_str();
@@ -2072,4 +2080,19 @@ fn accent_stream() -> impl iced::futures::Stream<Item = Message> {
         let c = p.accent_color.0.map(|c| Color::from_rgba(c.red as f32, c.green as f32, c.blue as f32, 1.0));
         Message::SystemAccent(c)
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::stem_of;
+
+    #[test]
+    fn extract_folder_names_stay_below_the_folder() {
+        assert_eq!(stem_of("photos.tar.gz"), "photos");
+        assert_eq!(stem_of("a.part2.rar"), "a");
+        for evil in ["...zip", "..zip", ".7z", "....tar.gz"] {
+            let s = stem_of(evil);
+            assert!(!s.trim_matches('.').is_empty() && !s.contains('/'), "{evil} -> {s}");
+        }
+    }
 }
