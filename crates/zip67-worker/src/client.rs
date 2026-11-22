@@ -29,6 +29,8 @@ struct Staging {
     /// For "delete files after archiving": only these and what is inside
     /// them may be deleted.
     delete_roots: Vec<PathBuf>,
+    /// Overwrite them with random data first.
+    shred: bool,
 }
 
 fn parent_dir(p: &Path) -> PathBuf {
@@ -40,20 +42,20 @@ fn parent_dir(p: &Path) -> PathBuf {
 
 impl Staging {
     fn for_request(req: &Request) -> std::io::Result<Option<Staging>> {
-        let (target, replace, delete_roots) = match req {
-            Request::Create { output, inputs, spec } => (output, false, if spec.delete_after { inputs.clone() } else { vec![] }),
+        let (target, replace, delete_roots, shred) = match req {
+            Request::Create { output, inputs, spec } => (output, false, if spec.delete_after { inputs.clone() } else { vec![] }, spec.shred),
             Request::AddFiles { archive, inputs, spec, .. } => {
                 let exists = archive.exists();
-                (archive, exists, if spec.delete_after && !exists { inputs.clone() } else { vec![] })
+                (archive, exists, if spec.delete_after && !exists { inputs.clone() } else { vec![] }, spec.shred)
             }
-            Request::Update { archive, .. } => (archive, true, vec![]),
+            Request::Update { archive, .. } => (archive, true, vec![], false),
             _ => return Ok(None),
         };
         let Some(name) = target.file_name().map(|n| n.to_os_string()) else { return Ok(None) };
         let target_dir = parent_dir(target);
         let dir = target_dir.join(format!(".67zip-{}", zip67_core::util::random_hex(8)));
         std::fs::DirBuilder::new().mode(0o700).create(&dir)?;
-        Ok(Some(Staging { dir, target_dir, name, replace, delete_roots }))
+        Ok(Some(Staging { dir, target_dir, name, replace, delete_roots, shred }))
     }
 
     /// Checks the worker's outputs and moves them into place. Paths the
@@ -73,7 +75,9 @@ impl Staging {
             if !(named_ok && inside && regular) {
                 return Err(format!("the worker reported an unexpected output file: {}", out.display()));
             }
-            moves.push((out.clone(), self.target_dir.join(&name)));
+            // Keep the caller's form of the path ("x.7z", not "./x.7z").
+            let dst = if self.target_dir == Path::new(".") { PathBuf::from(&name) } else { self.target_dir.join(&name) };
+            moves.push((out.clone(), dst));
         }
         let mut done = Vec::new();
         for (from, to) in moves {
@@ -89,16 +93,17 @@ impl Staging {
         }
         report.outputs = done;
         let roots: Vec<PathBuf> = self.delete_roots.iter().map(|r| lexical(r)).collect();
+        let mut seen = Vec::new();
         for p in std::mem::take(&mut report.delete_later) {
             let clean = lexical(&p);
             if p.components().any(|c| c == Component::ParentDir) || !roots.iter().any(|r| clean.starts_with(r)) {
                 report.warnings.push(format!("not deleted (outside the archived files): {}", p.display()));
                 continue;
             }
-            let is_dir = std::fs::symlink_metadata(&p).is_ok_and(|m| m.is_dir());
-            let res = if is_dir { std::fs::remove_dir(&p) } else { std::fs::remove_file(&p) };
-            if let (Err(e), false) = (res, is_dir) {
-                report.warnings.push(format!("could not delete {}: {e}", p.display()));
+            if std::fs::symlink_metadata(&p).is_ok_and(|m| m.is_dir()) {
+                let _ = std::fs::remove_dir(&p);
+            } else {
+                report.warnings.extend(zip67_core::create::delete_one(&p, self.shred, &mut seen));
             }
         }
         Ok(())
@@ -275,7 +280,7 @@ mod tests {
     fn stage(root: &Path, replace: bool, delete_roots: Vec<PathBuf>) -> Staging {
         let dir = root.join(".67zip-test");
         std::fs::create_dir(&dir).unwrap();
-        Staging { dir, target_dir: root.to_path_buf(), name: "a.7z".into(), replace, delete_roots }
+        Staging { dir, target_dir: root.to_path_buf(), name: "a.7z".into(), replace, delete_roots, shred: false }
     }
 
     #[test]

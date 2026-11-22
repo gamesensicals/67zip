@@ -70,3 +70,21 @@ fn worker_cannot_read_other_files() {
     let o = Command::new(EXE).arg("--sandbox-selftest").arg(tmp.path()).output().unwrap();
     assert!(String::from_utf8_lossy(&o.stdout).contains("reading /etc/passwd is blocked") || !String::from_utf8_lossy(&o.stdout).contains("Landlock"));
 }
+
+#[test]
+fn secure_delete_after_archiving() {
+    let tmp = tempfile::tempdir().unwrap();
+    let src = tmp.path().join("private");
+    fs::create_dir_all(src.join("d")).unwrap();
+    fs::write(src.join("d/a.txt"), b"top secret").unwrap();
+    fs::write(src.join("b.bin"), vec![7u8; 200_000]).unwrap();
+    let st = Command::new(EXE).current_dir(tmp.path()).args(["a", "-bd", "-psecret", "-sshred", "vault.7z", "private"]).status().unwrap();
+    assert!(st.success());
+    assert!(!src.exists(), "originals and their folders are gone");
+    assert!(tmp.path().join("vault.7z").exists());
+    assert!(fs::read_dir(tmp.path()).unwrap().all(|e| !e.unwrap().file_name().to_string_lossy().starts_with(".67zip")), "no staging leftovers");
+    let out = tmp.path().join("out");
+    let st = Command::new(EXE).args(["x", "-bd", "-y", "-psecret"]).arg(format!("-o{}", out.display())).arg(tmp.path().join("vault.7z")).status().unwrap();
+    assert!(st.success());
+    assert_eq!(fs::read(out.join("private/d/a.txt")).unwrap(), b"top secret");
+}

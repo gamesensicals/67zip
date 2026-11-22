@@ -233,6 +233,7 @@ fn add(a: &Args) -> i32 {
         volume_size: a.volume,
         follow_symlinks: a.follow_links,
         delete_after: a.delete_after,
+        shred: a.shred,
         exclude: a.exclude.clone(),
     };
     println!("Archive: {}", safe_display(&archive.to_string_lossy()));

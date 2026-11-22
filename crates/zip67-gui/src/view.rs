@@ -656,6 +656,15 @@ impl App {
             c = c.push(field("Split into", pick_list(VOLUMES, Some(f.volume), Message::AddVolume).text_size(14).padding(Padding::from([7, 10])).style(style::pick).menu_style(style::pick_menu).width(Length::Fill)));
             c = c.push(field("Leave out", input("e.g. *.tmp, .git, node_modules", &f.exclude, Message::AddExclude)));
             c = c.push(field("", checkbox(f.delete_after).label("Delete the files after they were added").on_toggle(Message::AddDeleteAfter).text_size(13)));
+            if f.delete_after {
+                c = c.push(field(
+                    "",
+                    checkbox(f.shred)
+                        .label("Securely: overwrite them with random data first (not reliable on SSDs and btrfs/ZFS)")
+                        .on_toggle(Message::AddShred)
+                        .text_size(13),
+                ));
+            }
         }
         if let Some(e) = &f.error {
             c = c.push(text(e.clone()).size(13).style(|t: &iced::Theme| text::Style { color: Some(t.palette().danger) }));

@@ -26,6 +26,9 @@ pub struct CreateSpec {
     pub volume_size: Option<u64>,
     pub follow_symlinks: bool,
     pub delete_after: bool,
+    /// With `delete_after`: overwrite the files with random data first.
+    #[serde(default)]
+    pub shred: bool,
     pub exclude: Vec<String>,
 }
 
@@ -43,6 +46,7 @@ impl Default for CreateSpec {
             volume_size: None,
             follow_symlinks: false,
             delete_after: false,
+            shred: false,
             exclude: Vec::new(),
         }
     }
@@ -64,6 +68,7 @@ impl CreateSpec {
             volume_size: self.volume_size,
             follow_symlinks: self.follow_symlinks,
             delete_after: self.delete_after,
+            shred: self.shred,
             exclude: self.exclude.clone(),
             size_hint: None,
             out_dir: None,

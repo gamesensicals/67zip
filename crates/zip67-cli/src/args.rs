@@ -25,6 +25,7 @@ pub struct Args {
     pub exclude: Vec<String>,
     pub hashes: Vec<String>,
     pub delete_after: bool,
+    pub shred: bool,
     pub follow_links: bool,
     pub technical: bool,
     pub no_progress: bool,
@@ -138,6 +139,9 @@ pub fn parse(raw: Vec<String>) -> Result<Args, String> {
             a.hashes.push(if h.is_empty() { "crc32".into() } else { h.to_string() });
         } else if lower == "sdel" {
             a.delete_after = true;
+        } else if lower == "sshred" {
+            a.delete_after = true;
+            a.shred = true;
         } else if lower == "l" {
             a.follow_links = true;
         } else if lower == "snl" || lower == "r" || lower == "spf" || lower == "ssc" || lower == "ssc-" {
@@ -197,6 +201,8 @@ Switches
   -scrc{type}   Hash type for h: CRC32, CRC64, SHA256, SHA1, SHA512, BLAKE3,
                 MD5, or * for all
   -sdel         Delete files after adding them
+  -sshred       Delete them securely: overwrite with random data first
+                (reliable on hard disks; not on SSDs or btrfs/ZFS)
   -l            Follow symbolic links instead of storing them
   -slt          Technical listing
   -bd           No progress display

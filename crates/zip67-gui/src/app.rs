@@ -150,6 +150,8 @@ pub struct App {
     pub queue: Vec<(Request, Purpose, String)>,
     pub toast: Option<(String, Instant, bool)>,
     pub temp_base: PathBuf,
+    /// Told the user once that decrypted temporary copies are on a disk.
+    pub warned_temp_on_disk: bool,
     pub watches: Vec<Watch>,
     pub sandbox: Option<SandboxStatus>,
     pub exe: PathBuf,
@@ -216,6 +218,7 @@ pub enum Message {
     AddSolid(bool),
     AddVolume(Volume),
     AddDeleteAfter(bool),
+    AddShred(bool),
     AddExclude(String),
     AddBrowse,
     AddBrowsed(Option<PathBuf>),
@@ -328,6 +331,7 @@ impl App {
             queue: Vec::new(),
             toast: None,
             temp_base: platform::temp_base(),
+            warned_temp_on_disk: false,
             watches: Vec::new(),
             sandbox: None,
             exe,
@@ -678,6 +682,13 @@ impl App {
                         } else if let Err(e) = platform::open_with_default(&path) {
                             self.toast(e.to_string(), true);
                         } else {
+                            if password.is_some() && !self.warned_temp_on_disk && !platform::temp_in_memory() {
+                                self.warned_temp_on_disk = true;
+                                self.toast(
+                                    "This file was decrypted to a temporary folder on the disk. 67zip overwrites it when it closes, but SSDs may keep old copies.".to_string(),
+                                    false,
+                                );
+                            }
                             let mtime = std::fs::metadata(&path).and_then(|m| m.modified()).ok();
                             self.watches.push(Watch { temp: path, mtime, archive, folder, password });
                         }
@@ -889,6 +900,7 @@ impl App {
             solid: true,
             volume: VOLUMES[0],
             delete_after: false,
+            shred: false,
             exclude: String::new(),
             error: None,
         }));
@@ -943,6 +955,7 @@ impl App {
             solid: f.solid,
             volume_size: f.volume.0,
             delete_after: f.delete_after,
+            shred: f.delete_after && f.shred,
             exclude: f.exclude.split([',', ';']).map(str::trim).filter(|s| !s.is_empty()).map(String::from).collect(),
             ..Default::default()
         };
@@ -1727,6 +1740,7 @@ impl App {
             Message::AddSolid(b) => self.with_add(|f| f.solid = b),
             Message::AddVolume(v) => self.with_add(|f| f.volume = v),
             Message::AddDeleteAfter(b) => self.with_add(|f| f.delete_after = b),
+            Message::AddShred(b) => self.with_add(|f| f.shred = b),
             Message::AddExclude(s) => self.with_add(|f| f.exclude = s),
             Message::AddBrowse => {
                 let start = self.current_dir();
@@ -1990,6 +2004,7 @@ impl App {
                 self.selected = (0..n).collect();
             }
             Key::Character("r") if m.control() => return self.update(Message::Refresh),
+            Key::Character("q") if m.control() => return iced::exit(),
             Key::Character("h") if m.control() => return self.update(Message::SetShowHidden(!self.settings.show_hidden)),
             Key::Character("l") if m.control() => {
                 return iced::widget::operation::focus("address");
