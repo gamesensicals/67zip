@@ -23,7 +23,7 @@ fn main() -> iced::Result {
     }
     let launch = app::Launch::from_args(&args);
     let icon = iced::window::icon::from_file_data(include_bytes!("../resources/67zip-256.png"), None).ok();
-    iced::application(move || app::App::new(launch.clone()), app::App::update, app::App::view)
+    let result = iced::application(move || app::App::new(launch.clone()), app::App::update, app::App::view)
         .title(app::App::title)
         .theme(app::App::theme)
         .subscription(app::App::subscription)
@@ -40,5 +40,8 @@ fn main() -> iced::Result {
             ..Default::default()
         })
         .antialiasing(true)
-        .run()
+        .run();
+    // Decrypted temporary copies do not outlive the app.
+    platform::wipe_own_temp();
+    result
 }

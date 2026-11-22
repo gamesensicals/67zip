@@ -84,14 +84,31 @@ pub fn temp_base() -> PathBuf {
             if let Ok(pid) = name.parse::<u32>()
                 && !Path::new(&format!("/proc/{pid}")).exists()
             {
-                let _ = std::fs::remove_dir_all(e.path());
+                // Files left by a session that ended: overwrite, then delete.
+                let _ = zip67_core::shred::shred_tree(&e.path());
             }
         }
     }
     let mine = root.join(std::process::id().to_string());
-    let _ = std::fs::remove_dir_all(&mine);
+    let _ = zip67_core::shred::shred_tree(&mine);
+    let _ = OWN_TEMP.set(mine.clone());
     let _ = std::fs::DirBuilder::new().mode(0o700).create(&mine);
     mine
+}
+
+static OWN_TEMP: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+
+/// Overwrites and deletes this session's temporary files (decrypted copies
+/// of files opened from archives). Called when the app closes.
+pub fn wipe_own_temp() {
+    if let Some(t) = OWN_TEMP.get() {
+        let _ = zip67_core::shred::shred_tree(t);
+    }
+}
+
+/// True when temporary copies live in memory (tmpfs) rather than on a disk.
+pub fn temp_in_memory() -> bool {
+    OWN_TEMP.get().is_some_and(|t| zip67_core::shred::in_memory(t))
 }
 
 /// A directory owned by `uid`, not a symbolic link, closed to others.

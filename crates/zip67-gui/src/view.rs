@@ -476,6 +476,20 @@ impl App {
                 .into(),
                 580.0,
             ),
+            Modal::TempOnDisk { folder, dont_warn } => (
+                column![
+                    Self::title_row(Icon::Info, "Decrypted file stored on disk".to_string()),
+                    label(format!(
+                        "The file you opened from an encrypted archive was decrypted into a temporary folder on the disk ({}), because this system has no temporary folder in memory.\n\n67zip overwrites and deletes it when it closes. SSDs and some file systems (btrfs, ZFS) may still keep old copies; full-disk encryption protects against that.",
+                        zip67_core::util::safe_display(folder)
+                    )),
+                    checkbox(*dont_warn).label("Don't warn me again").on_toggle(Message::TempNoticeDontWarn).text_size(13),
+                    row![space().width(Length::Fill), primary("OK", Some(Message::TempNoticeOk))].spacing(8),
+                ]
+                .spacing(16)
+                .into(),
+                520.0,
+            ),
             Modal::Confirm { title, text: t, ok, danger: d, .. } => (
                 column![
                     Self::title_row(if *d { Icon::Delete } else { Icon::Info }, title.clone()),
@@ -656,6 +670,15 @@ impl App {
             c = c.push(field("Split into", pick_list(VOLUMES, Some(f.volume), Message::AddVolume).text_size(14).padding(Padding::from([7, 10])).style(style::pick).menu_style(style::pick_menu).width(Length::Fill)));
             c = c.push(field("Leave out", input("e.g. *.tmp, .git, node_modules", &f.exclude, Message::AddExclude)));
             c = c.push(field("", checkbox(f.delete_after).label("Delete the files after they were added").on_toggle(Message::AddDeleteAfter).text_size(13)));
+            if f.delete_after {
+                c = c.push(field(
+                    "",
+                    checkbox(f.shred)
+                        .label("Securely: overwrite them with random data first (not reliable on SSDs and btrfs/ZFS)")
+                        .on_toggle(Message::AddShred)
+                        .text_size(13),
+                ));
+            }
         }
         if let Some(e) = &f.error {
             c = c.push(text(e.clone()).size(13).style(|t: &iced::Theme| text::Style { color: Some(t.palette().danger) }));
@@ -757,6 +780,13 @@ impl App {
             field("", checkbox(s.show_hidden).label("Show hidden files (Ctrl+H)").on_toggle(Message::SetShowHidden).text_size(13)),
             field("", checkbox(s.use_trash).label("Delete moves files to the Trash").on_toggle(Message::SetUseTrash).text_size(13)),
             field("", checkbox(s.confirm_delete).label("Ask before deleting").on_toggle(Message::SetConfirmDelete).text_size(13)),
+            field(
+                "",
+                checkbox(s.warn_temp_on_disk)
+                    .label("Warn when a file from an encrypted archive has to be decrypted onto the disk")
+                    .on_toggle(Message::SetWarnTempOnDisk)
+                    .text_size(13)
+            ),
             rule::horizontal(1).style(style::rule),
             field("New archives", pick_list(FORMATS, FORMATS.iter().copied().find(|f| f.0 == s.default_format), Message::SetDefaultFormat).text_size(14).padding(Padding::from([7, 10])).style(style::pick).menu_style(style::pick_menu).width(Length::Fill)),
             field("Compression", pick_list(LEVELS, LEVELS.iter().copied().find(|l| l.0 == s.default_level), Message::SetDefaultLevel).text_size(14).padding(Padding::from([7, 10])).style(style::pick).menu_style(style::pick_menu).width(Length::Fill)),

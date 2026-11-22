@@ -91,6 +91,7 @@ Wayland) and working OpenGL or Vulkan drivers, as any desktop provides.
 67z a photos.7z ~/Pictures            # create or add (7z by default)
 67z a -tzip -p backup.zip docs/       # zip with AES-256, asks for the password
 67z a -mx9 -mhe=on -psecret x.7z dir  # ultra, encrypted file names
+67z a -p -sshred vault.7z private/    # encrypt, then securely delete the originals
 67z a -ttar.zst code.tar.zst src/
 67z l archive.7z                      # list (-slt for details)
 67z t archive.zip                     # test
@@ -147,6 +148,23 @@ What a malicious archive cannot do in 67zip:
   your umask; setuid/setgid bits are dropped.
 - **Run a launcher.** Files opened from inside an archive lose their
   execute permission, and `.desktop` launchers are not opened.
+
+Optional secure deletion:
+
+- **Delete originals securely** after archiving them ("Securely" under
+  "Delete the files after they were added", or `67z a -sshred`): each file
+  is overwritten with random data and flushed to the disk, renamed to a
+  random name, then deleted. Files with other hard links are kept (their
+  data would survive under the other name).
+- **Decrypted temporary copies** of files you open from inside an archive
+  are overwritten and deleted when 67zip closes (or, after a crash, when
+  it next starts). They normally live in memory (`$XDG_RUNTIME_DIR`);
+  67zip warns when they have to go to a disk.
+- Overwriting reliably destroys old data only on hard disks with ordinary
+  file systems (ext4, XFS). SSDs move data between their cells, and
+  copy-on-write file systems (btrfs, ZFS, bcachefs, f2fs), snapshots and
+  backups keep old copies; 67zip warns in those cases. Full-disk
+  encryption (LUKS) is what protects data on them.
 
 Other protections:
 

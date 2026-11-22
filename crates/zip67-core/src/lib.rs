@@ -23,6 +23,7 @@ pub mod io;
 pub mod limits;
 pub mod password;
 pub mod progress;
+pub mod shred;
 pub mod source;
 pub mod split;
 pub mod update;

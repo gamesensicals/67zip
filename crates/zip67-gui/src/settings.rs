@@ -26,6 +26,9 @@ pub struct Settings {
     pub last_dir: Option<PathBuf>,
     pub favorites: Vec<PathBuf>,
     pub scale: f32,
+    /// Tell when a file from an encrypted archive had to be decrypted into
+    /// a temporary folder on a disk (no in-memory folder available).
+    pub warn_temp_on_disk: bool,
 }
 
 impl Default for Settings {
@@ -42,6 +45,7 @@ impl Default for Settings {
             last_dir: None,
             favorites: Vec::new(),
             scale: 1.0,
+            warn_temp_on_disk: true,
         }
     }
 }

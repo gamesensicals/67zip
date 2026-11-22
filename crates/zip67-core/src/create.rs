@@ -105,6 +105,9 @@ pub struct CreateOptions {
     pub follow_symlinks: bool,
     /// Delete the source files after the archive was written successfully.
     pub delete_after: bool,
+    /// With `delete_after`: overwrite the files with random data first
+    /// (see [`crate::shred`]).
+    pub shred: bool,
     /// Wildcard patterns of names to leave out (`*.o`, `.git`).
     pub exclude: Vec<String>,
     /// Total bytes that will be added, if known; lets multi-threaded
@@ -131,6 +134,7 @@ impl Default for CreateOptions {
             volume_size: None,
             follow_symlinks: false,
             delete_after: false,
+            shred: false,
             exclude: Vec::new(),
             size_hint: None,
             out_dir: None,
@@ -425,10 +429,36 @@ pub fn create(output: &Path, inputs: &[PathBuf], opts: &CreateOptions, progress:
         if opts.out_dir.is_some() {
             report.delete_later = sources_to_delete(&items);
         } else {
-            delete_sources(&items, &mut report);
+            delete_sources(&items, opts.shred, &mut report);
         }
     }
     Ok(report)
+}
+
+/// Deletes (or securely deletes) one source file. Returns warnings; for
+/// secure deletion also one per distinct reason it may not be reliable
+/// (`seen` keeps the reasons already reported).
+pub fn delete_one(src: &Path, shred: bool, seen: &mut Vec<String>) -> Vec<String> {
+    let mut w = Vec::new();
+    if !shred {
+        if let Err(e) = fs::remove_file(src) {
+            w.push(format!("could not delete {}: {e}", src.display()));
+        }
+        return w;
+    }
+    let why = src.parent().filter(|p| !p.as_os_str().is_empty()).and_then(crate::shred::reliability);
+    match crate::shred::shred_file(src) {
+        Ok(crate::shred::Shredded::Kept(reason)) => w.push(format!("{} not deleted: {reason}", src.display())),
+        Ok(_) => {}
+        Err(e) => w.push(format!("could not securely delete {}: {e}", src.display())),
+    }
+    if let Some(why) = why
+        && !seen.contains(&why)
+    {
+        w.push(format!("Secure deletion may not be complete for files like {}: {why}. Full-disk encryption protects against this.", src.display()));
+        seen.push(why);
+    }
+    w
 }
 
 /// Where the archive for `output` is written: in `out_dir` when given.
@@ -445,12 +475,11 @@ fn sources_to_delete(items: &[Item]) -> Vec<PathBuf> {
     files.chain(dirs).collect()
 }
 
-fn delete_sources(items: &[Item], report: &mut CreateReport) {
+fn delete_sources(items: &[Item], shred: bool, report: &mut CreateReport) {
+    let mut seen = Vec::new();
     for item in items.iter().filter(|i| i.kind != EntryKind::Dir) {
         if let Some(src) = &item.source {
-            if let Err(e) = fs::remove_file(src) {
-                report.warnings.push(format!("could not delete {}: {e}", src.display()));
-            }
+            report.warnings.extend(delete_one(src, shred, &mut seen));
         }
     }
     // Then empty folders, deepest first.
