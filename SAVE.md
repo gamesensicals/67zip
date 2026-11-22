@@ -108,6 +108,16 @@ multi-core safe bzip2 decoder.
 - GUI: dialogs focus their text field; password retry flow verified;
   settings/about verified. `install.sh` verified (install + uninstall).
 
+- **Split archives (user request 2026-11-22)**: open from any part in all
+  common schemes: `.001`/`.000`/`.00` numbering, `.partN.ext` (padded or
+  not, also `.partN.tar.gz`), `.ext.partN`, PKZIP `.z01`...`.zip` (per-part
+  offsets in the zip reader), `split` letters `.aa`. Missing parts are
+  named in the error. `source.rs` (`parse_part_name`, `volume_set`),
+  tests in `tests/split.rs` (+ Info-ZIP `zip -s`). GUI labels parts
+  ("7z, part 2", "Zip, last part"), opens the whole set from any part,
+  shows the part count, extracts a selected set only once. RAR is detected
+  and reported as not supported (not implemented).
+
 ## Next
 
 Ask the user to approve moving the work to `gamesensicals/67zip`.

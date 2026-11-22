@@ -28,7 +28,7 @@ modern interface that looks the same on every distribution.
 | zip | yes | yes | Deflate, BZip2, LZMA, XZ, Zstd, Store, PPMd (read); Zip64; UTF-8 names; AES-256 (read and write); old ZipCrypto (read only) |
 | tar | yes | yes | ustar, PAX, GNU long names; plain or with gz, bz2, xz, zst, lz, lzma |
 | gz, bz2, xz, zst, lzma, lz | yes | yes | single files |
-| `.001` split archives | yes | yes | any format; create with "Split into" or `-v100m` |
+| Split archives | yes | yes | open from any part: `.001`, `.part1.7z` / `.part01.rar`-style names, `.7z.part1`, PKZIP `.z01` … `.zip`, `split`'s `.aa`; create `.001` parts with "Split into" or `-v100m` |
 | iso | yes | no | ISO 9660 with Rock Ridge (permissions, links) and Joliet (Unicode names) |
 
 ## Install

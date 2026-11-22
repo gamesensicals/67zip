@@ -64,6 +64,16 @@ pub fn kind_of(name: &str, is_dir: bool, exec: bool) -> Kind {
 }
 
 pub fn type_label(r: &Row) -> String {
+    if !r.is_dir {
+        if let Some(p) = zip67_core::source::parse_part_name(&r.name) {
+            let t = zip67_core::ArchiveType::from_plain_name(&p.logical).map(|t| t.display_name()).unwrap_or_else(|| "Split file".into());
+            return format!("{t}, part {}", p.number);
+        }
+        // The .zip of a PKZIP split archive is its last part.
+        if r.name.to_ascii_lowercase().ends_with(".zip") && ["z01", "Z01"].iter().any(|z| r.path.with_extension(z).is_file()) {
+            return "Zip, last part".into();
+        }
+    }
     match r.kind {
         Kind::Folder => "Folder".into(),
         Kind::Link => "Link".into(),

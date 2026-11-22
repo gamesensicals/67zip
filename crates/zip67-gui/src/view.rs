@@ -352,6 +352,9 @@ impl App {
                     if a.info.solid {
                         parts.push("solid".into());
                     }
+                    if a.info.volumes > 1 {
+                        parts.push(format!("{} parts", a.info.volumes));
+                    }
                     if a.nested {
                         parts.push("read-only".into());
                     }

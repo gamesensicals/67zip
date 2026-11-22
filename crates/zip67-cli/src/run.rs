@@ -492,7 +492,7 @@ fn info() {
         ("xz zst", "yes", "yes", "single files"),
         ("lzma lz", "yes", "yes", "single files"),
         ("iso", "yes", "no", "ISO 9660, Rock Ridge, Joliet"),
-        (".001", "yes", "yes", "split volumes of any format"),
+        ("split", "yes", "yes", "any format split into parts: .001, .part1.7z, .7z.part1, .z01 ... .zip, .aa"),
     ];
     for (t, r, w, n) in rows {
         println!("  {t:<9} {r:<6} {w:<10} {n}");

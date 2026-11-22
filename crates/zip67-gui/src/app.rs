@@ -259,9 +259,11 @@ fn file_name(p: &Path) -> String {
 
 /// Archive name without its archive extension: `photos.tar.gz` -> `photos`.
 pub fn stem_of(name: &str) -> String {
+    // A part of a split archive is named after the whole archive.
+    let logical = zip67_core::source::logical_name_str(name);
+    let name = logical.as_str();
     if let Some(t) = zip67_core::ArchiveType::from_file_name(name) {
         let lower = name.to_ascii_lowercase();
-        let lower = lower.strip_suffix(".001").unwrap_or(&lower).to_string();
         for ext in [t.extension(), ".tgz".into(), ".tbz2".into(), ".txz".into(), ".tzst".into(), ".tbz".into()] {
             if lower.ends_with(&ext) {
                 return name[..lower.len() - ext.len()].to_string();
@@ -709,7 +711,8 @@ impl App {
 
     pub fn open_archive_file(&mut self, p: &Path, password: Option<String>) {
         let host_dir = p.parent().map(Path::to_path_buf).unwrap_or_else(platform::home);
-        let display = p.to_string_lossy().into_owned();
+        // Parts of a split archive are shown under the archive's own name.
+        let display = host_dir.join(zip67_core::source::logical_name(p)).to_string_lossy().into_owned();
         let req = Request::List { archive: p.to_path_buf(), password: password.clone() };
         self.start_job(req, Purpose::Open { file: p.to_path_buf(), display, host_dir, nested: false, folder: String::new(), password }, "Opening".into());
     }
@@ -852,7 +855,7 @@ impl App {
     }
 
     fn extract_fs_archives(&mut self, archives: Vec<PathBuf>, into_folder: bool) {
-        for a in archives {
+        for a in one_per_archive(archives) {
             let parent = a.parent().map(Path::to_path_buf).unwrap_or_else(|| self.current_dir());
             let dest = if into_folder { parent.join(stem_of(&file_name(&a))) } else { parent };
             let options = ExtractOptions { overwrite: Overwrite::Ask, ..Default::default() };
@@ -933,7 +936,7 @@ impl App {
             let req = Request::Extract { archive, password, dest: dest.clone(), selection, options };
             self.start_job(req, Purpose::Extract { dest, then: After::Report }, "Extracting".into());
         } else {
-            for a in f.archives {
+            for a in one_per_archive(f.archives) {
                 let d = if f.subfolder { dest.join(stem_of(&file_name(&a))) } else { dest.clone() };
                 let options = ExtractOptions { path_mode: f.path_mode.0, overwrite: f.overwrite.0, ..Default::default() };
                 let req = Request::Extract { archive: a.clone(), password: password.clone(), dest: d.clone(), selection: Selection::All, options };
@@ -1504,7 +1507,7 @@ impl App {
             }
             Message::Test => match &self.location {
                 Location::Dir(_) => {
-                    for p in self.selected_paths() {
+                    for p in one_per_archive(self.selected_paths()) {
                         let req = Request::Test { archive: p.clone(), password: None, selection: Selection::All };
                         self.start_job(req, Purpose::Test, format!("Testing {}", file_name(&p)));
                     }
@@ -1937,6 +1940,21 @@ impl App {
         }
         Task::none()
     }
+}
+
+/// Keeps one entry per split archive when several of its parts are selected.
+fn one_per_archive(paths: Vec<PathBuf>) -> Vec<PathBuf> {
+    let mut seen = std::collections::HashSet::new();
+    paths
+        .into_iter()
+        .filter(|p| {
+            let key = match zip67_core::source::volume_set(p) {
+                Ok(Some(set)) => set.parts.first().cloned().unwrap_or_else(|| p.clone()),
+                _ => p.clone(),
+            };
+            seen.insert(key)
+        })
+        .collect()
 }
 
 fn copy_tree(from: &Path, to: &Path) -> std::io::Result<()> {
