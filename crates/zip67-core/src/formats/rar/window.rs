@@ -70,9 +70,9 @@ impl Window {
     /// `size` is rounded up to a power of two.
     pub fn new(size: usize) -> Result<Self> {
         let size = size.max(1 << 16).checked_next_power_of_two().ok_or_else(|| Error::limit("RAR dictionary too large"))?;
-        let mut buf = Vec::new();
-        buf.try_reserve_exact(size).map_err(|_| Error::limit("not enough memory for the RAR dictionary"))?;
-        buf.resize(size, 0);
+        // Zeroed by the allocator, so pages the data never reaches are not
+        // touched (dictionaries can be far larger than the files in them).
+        let buf = vec![0u8; size];
         Ok(Window {
             buf,
             mask: size - 1,
@@ -98,9 +98,7 @@ impl Window {
         if size <= self.buf.len() {
             return Ok(());
         }
-        let mut nb = Vec::new();
-        nb.try_reserve_exact(size).map_err(|_| Error::limit("not enough memory for the RAR dictionary"))?;
-        nb.resize(size, 0);
+        let mut nb = vec![0u8; size];
         let keep = (self.pos - self.stream_start).min(self.buf.len() as u64);
         let nmask = size - 1;
         for p in self.pos - keep..self.pos {

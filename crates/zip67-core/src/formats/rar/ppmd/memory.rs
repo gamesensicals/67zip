@@ -194,9 +194,9 @@ pub(crate) struct Memory<B = Vec<u8>> {
 
 impl Memory {
     pub(crate) fn new(size: usize) -> Result<Self, Error> {
-        let mut bytes = Vec::new();
-        bytes.try_reserve_exact(size).map_err(|_| Error::MemoryAllocation)?;
-        bytes.resize(size, 0);
+        // 67zip: zeroed by the allocator (lazily on Linux) instead of
+        // writing every byte; the caller limits the size.
+        let bytes = vec![0u8; size];
         Ok(Self { bytes })
     }
 

@@ -10,7 +10,7 @@ impl<RC: Ppmd7RangeDecoder> PPMd7<RC> {
             let stats = self.mem.stats(self.min_context);
             let summ_freq = self.mem.summ_freq(self.min_context);
 
-            let mut count = self.rc.get_threshold(summ_freq);
+            let mut count = self.rc.get_threshold(summ_freq)?;
             let hi_cnt = count;
 
             let states = self.mem.states(stats, num_stats);
@@ -108,7 +108,7 @@ impl<RC: Ppmd7RangeDecoder> PPMd7<RC> {
             let see_source = self.make_esc_freq(num_masked, &mut freq_sum);
             freq_sum += hi_cnt;
 
-            let mut count = self.rc.get_threshold(freq_sum);
+            let mut count = self.rc.get_threshold(freq_sum)?;
 
             if count < hi_cnt {
                 hi_cnt = count;

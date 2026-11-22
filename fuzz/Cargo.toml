@@ -50,3 +50,9 @@ name = "streams"
 path = "fuzz_targets/streams.rs"
 test = false
 doc = false
+
+[[bin]]
+name = "rar"
+path = "fuzz_targets/rar.rs"
+test = false
+doc = false

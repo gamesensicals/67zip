@@ -4,4 +4,4 @@ Comment=Extract the archive into this folder
 Exec=67zip --extract-here %F
 Icon-Name=io.github.gamesensicals.SixtySevenZip
 Selection=s
-Extensions=7z;zip;tar;gz;tgz;bz2;tbz2;xz;txz;zst;tzst;lz;lzma;jar;
+Extensions=7z;zip;rar;cbr;tar;gz;tgz;bz2;tbz2;xz;txz;zst;tzst;lz;lzma;jar;

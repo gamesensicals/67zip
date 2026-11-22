@@ -611,10 +611,13 @@ impl RarReader {
             (Err(e), Ok(_)) => (e, true),
             (_, Err(e)) => (e, false),
         };
+        // Checksum results come at the end of a complete stream; anything
+        // else from the decoder means the rest of a solid stream is lost.
+        let decoded_fully = stream_ok || matches!(err, Error::Checksum(_) | Error::WrongPassword);
         if encrypted && !verified && matches!(err, Error::Corrupt(_) | Error::Io(_) | Error::Checksum(_)) {
             err = Error::WrongPassword;
         }
-        if stream_ok || matches!(err, Error::Checksum(_) | Error::WrongPassword) { Ok(Done::Entry(err)) } else { Err(err) }
+        if decoded_fully { Ok(Done::Entry(err)) } else { Err(err) }
     }
 
     /// A RAR5 "file copy": the content of an earlier file, decoded again.

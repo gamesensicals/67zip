@@ -99,7 +99,9 @@ pub(crate) fn read_volume(
             let Some(pw) = password else { return Err(Error::PasswordRequired) };
             match read_encrypted(src, size - pos, pw, keys) {
                 Ok(v) => v,
-                Err(Error::Checksum(_)) if vh.files.is_empty() => return Err(Error::WrongPassword),
+                // Nothing decrypted sensibly yet: RAR 4 has no password check
+                // value, so this is how a wrong password shows.
+                Err(_) if vh.files.is_empty() => return Err(Error::WrongPassword),
                 Err(e) => {
                     vh.warnings.push(e.to_string());
                     vh.truncated = true;

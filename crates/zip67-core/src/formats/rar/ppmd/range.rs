@@ -9,12 +9,16 @@ const K_BOT_VALUE: u32 = 1 << 15;
 pub(crate) trait Ppmd7RangeDecoder {
     fn range(&self) -> u32;
     fn code(&self) -> u32;
-    fn get_threshold(&mut self, total: u32) -> u32;
+    fn get_threshold(&mut self, total: u32) -> Result<u32, std::io::Error>;
     fn decode_bit_0(&mut self, src: &mut dyn ByteSource, size: u32) -> Result<(), std::io::Error>;
     fn decode_bit_1(&mut self, size: u32);
     fn decode(&mut self, start: u32, size: u32);
     fn decode_final(&mut self, src: &mut dyn ByteSource, start: u32, freq: u32) -> Result<(), std::io::Error>;
     fn normalize_remote(&mut self, src: &mut dyn ByteSource) -> Result<(), std::io::Error>;
+}
+
+fn damaged() -> std::io::Error {
+    std::io::Error::new(std::io::ErrorKind::InvalidData, "damaged PPMd data")
 }
 
 pub(crate) struct RangeDecoder7a {
@@ -36,17 +40,22 @@ impl RangeDecoder7a {
     }
 
     #[inline(always)]
-    fn normalize(&mut self, src: &mut dyn ByteSource) {
+    fn normalize(&mut self, src: &mut dyn ByteSource) -> Result<(), std::io::Error> {
         while self.low ^ self.low.wrapping_add(self.range) < K_TOP_VALUE
             || self.range < K_BOT_VALUE && {
                 self.range = 0u32.wrapping_sub(self.low) & (K_BOT_VALUE - 1);
                 true
             }
         {
+            // 67zip: a zero range would never leave this loop.
+            if self.range == 0 {
+                return Err(damaged());
+            }
             self.code = self.code << 8 | u32::from(src.next_byte());
             self.range <<= 8;
             self.low <<= 8;
         }
+        Ok(())
     }
 }
 
@@ -62,16 +71,20 @@ impl Ppmd7RangeDecoder for RangeDecoder7a {
     }
 
     #[inline(always)]
-    fn get_threshold(&mut self, total: u32) -> u32 {
+    fn get_threshold(&mut self, total: u32) -> Result<u32, std::io::Error> {
+        // 67zip: only damaged data gets here with a zero total or a range
+        // below it; fail instead of dividing by zero.
+        if total == 0 || self.range < total {
+            return Err(damaged());
+        }
         self.range /= total;
-        self.code / self.range
+        Ok(self.code / self.range)
     }
 
     #[inline(always)]
     fn decode_bit_0(&mut self, src: &mut dyn ByteSource, size: u32) -> Result<(), std::io::Error> {
         self.range = size;
-        self.normalize(src);
-        Ok(())
+        self.normalize(src)
     }
 
     #[inline(always)]
@@ -92,13 +105,11 @@ impl Ppmd7RangeDecoder for RangeDecoder7a {
     #[inline(always)]
     fn decode_final(&mut self, src: &mut dyn ByteSource, start: u32, freq: u32) -> Result<(), std::io::Error> {
         Ppmd7RangeDecoder::decode(self, start, freq);
-        self.normalize(src);
-        Ok(())
+        self.normalize(src)
     }
 
     #[inline(always)]
     fn normalize_remote(&mut self, src: &mut dyn ByteSource) -> Result<(), std::io::Error> {
-        self.normalize(src);
-        Ok(())
+        self.normalize(src)
     }
 }

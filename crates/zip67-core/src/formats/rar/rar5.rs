@@ -103,7 +103,7 @@ pub(crate) fn read_volume(
             },
             Some((key, verified)) => match read_encrypted(src, size - pos, key) {
                 Ok(v) => v,
-                Err(Error::Checksum(_)) if vh.files.is_empty() && !*verified => return Err(Error::WrongPassword),
+                Err(_) if vh.files.is_empty() && !*verified => return Err(Error::WrongPassword),
                 Err(e) => {
                     vh.warnings.push(format!("{e}"));
                     vh.truncated = true;
@@ -224,8 +224,8 @@ fn read_plain(src: &mut dyn ReadSeek, left: u64) -> Result<(Vec<u8>, u64)> {
         return Err(bad("archive ends inside a header (incomplete download?)"));
     }
     let mut all = vec![0u8; (vlen + hsize) as usize];
-    let have = n - 4;
-    all[..have].copy_from_slice(&head[4..n]);
+    let have = (n - 4).min(all.len());
+    all[..have].copy_from_slice(&head[4..4 + have]);
     src.read_exact(&mut all[have..])?;
     if crate::crc::crc32(&all) != crc {
         return Err(Error::Checksum("RAR5 header".into()));

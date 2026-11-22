@@ -38,7 +38,10 @@ pub fn derive5(password: &Password, salt: &[u8; 16], lg2: u8) -> Keys5 {
     let mut u: [u8; 32] = m.finalize().into_bytes().into();
     let mut f = Zeroizing::new(u);
     let mut out = [Zeroizing::new([0u8; 32]), Zeroizing::new([0u8; 32]), Zeroizing::new([0u8; 32])];
-    let counts = [(1u32 << lg2.min(MAX_KDF_LG2)) - 1, 16, 16];
+    // Fuzzing builds use few rounds so the fuzzer gets past the key
+    // derivation; the code path is the same.
+    let lg2 = if cfg!(fuzzing) { lg2.min(4) } else { lg2.min(MAX_KDF_LG2) };
+    let counts = [(1u32 << lg2) - 1, 16, 16];
     for (k, &n) in counts.iter().enumerate() {
         for _ in 0..n {
             let mut m = base.clone();
@@ -183,7 +186,7 @@ pub fn derive3(password: &Password, salt: Option<&[u8; 8]>) -> (Zeroizing<[u8; 1
     }
     let mut sha = Sha1Rar::new();
     let mut iv = [0u8; 16];
-    const ROUNDS: u32 = 0x40000;
+    const ROUNDS: u32 = if cfg!(fuzzing) { 0x40 } else { 0x40000 };
     for i in 0..ROUNDS {
         sha.update_impl(&mut raw, true);
         let mut num = [i as u8, (i >> 8) as u8, (i >> 16) as u8];
